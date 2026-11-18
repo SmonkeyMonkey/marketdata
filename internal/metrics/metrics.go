@@ -387,3 +387,19 @@ func (a *Alerts) WatchRules(count func() int) {
 
 func (a *Alerts) Fired(kind string)         { a.fired.WithLabelValues(kind).Inc() }
 func (a *Alerts) Evaluated(d time.Duration) { a.eval.Observe(d.Seconds()) }
+
+type HTTP struct {
+	duration *prometheus.HistogramVec
+}
+
+func NewHTTP(reg prometheus.Registerer) *HTTP {
+	return &HTTP{duration: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: namespace, Subsystem: "api", Name: "request_duration_seconds",
+		Help:    "HTTP request duration by route pattern and status code.",
+		Buckets: prometheus.ExponentialBuckets(0.001, 2, 14), // 1ms .. ~8s
+	}, []string{"route", "code"})}
+}
+
+func (h *HTTP) Observe(route string, code int, d time.Duration) {
+	h.duration.WithLabelValues(route, strconv.Itoa(code)).Observe(d.Seconds())
+}

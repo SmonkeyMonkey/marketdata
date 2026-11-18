@@ -4,3 +4,5 @@ bin/
 .github/
 tools/
 *.md
+frontend/node_modules/
+frontend/dist/

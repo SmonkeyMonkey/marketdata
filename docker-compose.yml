@@ -86,6 +86,27 @@ services:
       kafka-init:
         condition: service_completed_successfully
 
+  # Web UI + history API; proxies /ws to the gateway and /api/rules to alerts.
+  api:
+    <<: *app
+    image: marketdata-api:dev
+    build:
+      context: .
+      args:
+        SERVICE: api
+    ports:
+      - "8088:8088"
+    environment:
+      CLICKHOUSE_ADDR: clickhouse:9000
+      KAFKA_BROKERS: kafka:29092
+      API_GATEWAY_URL: http://gateway:8090
+      API_ALERTS_URL: http://alerts:8091
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      kafka-init:
+        condition: service_completed_successfully
+
   gateway:
     <<: *app
     image: marketdata-gateway:dev
@@ -187,6 +208,8 @@ services:
         # Rules are state, not a stream: compaction keeps the latest version
         # of each rule (and drops tombstoned ones) forever.
         $$T --bootstrap-server $$B --create --if-not-exists --topic md.alert-rules --partitions 1 --replication-factor 1 --config cleanup.policy=compact
+        $$T --bootstrap-server $$B --create --if-not-exists --topic md.subscriptions --partitions 1 --replication-factor 1 --config cleanup.policy=compact
+        $$T --bootstrap-server $$B --create --if-not-exists --topic md.settings --partitions 1 --replication-factor 1 --config cleanup.policy=compact
     restart: "no"
 
   kafka-ui:

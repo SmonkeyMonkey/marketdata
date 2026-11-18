@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -35,6 +36,10 @@ type Kafka struct {
 	TopicCandles string
 	TopicAlerts  string
 	TopicRules   string
+	// TopicSubscriptions is the compacted topic of streamed markets.
+	TopicSubscriptions string
+	// TopicSettings is the compacted topic of per-market alert settings.
+	TopicSettings string
 }
 
 type Aggregator struct {
@@ -153,16 +158,11 @@ func LoadIngester() (Ingester, error) {
 func LoadWriter() (Writer, error) {
 	e := &env{}
 	c := Writer{
-		Log:         e.log(),
-		MetricsAddr: e.str("WRITER_METRICS_ADDR", ":9102"),
-		Kafka:       e.kafka(),
-		Group:       e.str("WRITER_CONSUMER_GROUP", "clickhouse-writer"),
-		ClickHouse: ClickHouse{
-			Addr:     e.str("CLICKHOUSE_ADDR", "localhost:9000"),
-			Database: e.str("CLICKHOUSE_DB", "marketdata"),
-			User:     e.str("CLICKHOUSE_USER", "marketdata"),
-			Password: e.str("CLICKHOUSE_PASSWORD", "marketdata"),
-		},
+		Log:           e.log(),
+		MetricsAddr:   e.str("WRITER_METRICS_ADDR", ":9102"),
+		Kafka:         e.kafka(),
+		Group:         e.str("WRITER_CONSUMER_GROUP", "clickhouse-writer"),
+		ClickHouse:    e.clickhouse(),
 		BatchSize:     int(e.int64("WRITER_BATCH_SIZE", 10_000)),
 		FlushInterval: e.duration("WRITER_FLUSH_INTERVAL", time.Second),
 		InsertTimeout: e.duration("WRITER_INSERT_TIMEOUT", 10*time.Second),
@@ -254,12 +254,14 @@ func (e *env) exchanges() []Exchange {
 
 func (e *env) kafka() Kafka {
 	k := Kafka{
-		Brokers:      e.list("KAFKA_BROKERS", []string{"localhost:9092"}),
-		TopicTrades:  e.str("KAFKA_TOPIC_TRADES", "md.trades"),
-		TopicGaps:    e.str("KAFKA_TOPIC_GAPS", "md.gaps"),
-		TopicCandles: e.str("KAFKA_TOPIC_CANDLES", "md.candles"),
-		TopicAlerts:  e.str("KAFKA_TOPIC_ALERTS", "md.alerts"),
-		TopicRules:   e.str("KAFKA_TOPIC_ALERT_RULES", "md.alert-rules"),
+		Brokers:            e.list("KAFKA_BROKERS", []string{"localhost:9092"}),
+		TopicTrades:        e.str("KAFKA_TOPIC_TRADES", "md.trades"),
+		TopicGaps:          e.str("KAFKA_TOPIC_GAPS", "md.gaps"),
+		TopicCandles:       e.str("KAFKA_TOPIC_CANDLES", "md.candles"),
+		TopicAlerts:        e.str("KAFKA_TOPIC_ALERTS", "md.alerts"),
+		TopicRules:         e.str("KAFKA_TOPIC_ALERT_RULES", "md.alert-rules"),
+		TopicSubscriptions: e.str("KAFKA_TOPIC_SUBSCRIPTIONS", "md.subscriptions"),
+		TopicSettings:      e.str("KAFKA_TOPIC_SETTINGS", "md.settings"),
 	}
 	if len(k.Brokers) == 0 {
 		e.fail("KAFKA_BROKERS must not be empty")
@@ -359,7 +361,7 @@ func LoadGateway() (Gateway, error) {
 		MetricsAddr:      e.str("GATEWAY_METRICS_ADDR", ":9104"),
 		Kafka:            e.kafka(),
 		MaxConns:         e.int64("GATEWAY_MAX_CONNS", 100_000),
-		MaxSubscriptions: int(e.int64("GATEWAY_MAX_SUBSCRIPTIONS", 50)),
+		MaxSubscriptions: int(e.int64("GATEWAY_MAX_SUBSCRIPTIONS", 200)),
 		SendQueue:        int(e.int64("GATEWAY_SEND_QUEUE", 1024)),
 		WriteTimeout:     e.duration("GATEWAY_WRITE_TIMEOUT", 5*time.Second),
 		PingInterval:     e.duration("GATEWAY_PING_INTERVAL", 30*time.Second),
@@ -374,7 +376,6 @@ type Alerts struct {
 	MetricsAddr    string
 	Kafka          Kafka
 	Group          string
-	Whale          decimal.Decimal
 	MovePct        decimal.Decimal
 	MoveWindow     time.Duration
 	MoveCooldown   time.Duration
@@ -391,7 +392,6 @@ func LoadAlerts() (Alerts, error) {
 		MetricsAddr:    e.str("ALERTS_METRICS_ADDR", ":9105"),
 		Kafka:          e.kafka(),
 		Group:          e.str("ALERTS_CONSUMER_GROUP", "alerts"),
-		Whale:          e.decimal("ALERT_WHALE_NOTIONAL", "100000"),
 		MovePct:        e.decimal("ALERT_MOVE_PCT", "0.5"),
 		MoveWindow:     e.duration("ALERT_MOVE_WINDOW", time.Minute),
 		MoveCooldown:   e.duration("ALERT_MOVE_COOLDOWN", 5*time.Minute),
@@ -411,4 +411,52 @@ func (e *env) decimal(key, def string) decimal.Decimal {
 		return decimal.RequireFromString(def)
 	}
 	return d
+}
+
+func (e *env) clickhouse() ClickHouse {
+	return ClickHouse{
+		Addr:     e.str("CLICKHOUSE_ADDR", "localhost:9000"),
+		Database: e.str("CLICKHOUSE_DB", "marketdata"),
+		User:     e.str("CLICKHOUSE_USER", "marketdata"),
+		Password: e.str("CLICKHOUSE_PASSWORD", "marketdata"),
+	}
+}
+
+type API struct {
+	Log         Log
+	Addr        string
+	MetricsAddr string
+	ClickHouse  ClickHouse
+	Kafka       Kafka
+	// MaxSubscriptions caps markets added from the UI.
+	MaxSubscriptions int
+	CatalogTTL       time.Duration
+	GatewayURL       *url.URL
+	AlertsURL        *url.URL
+}
+
+func LoadAPI() (API, error) {
+	e := &env{}
+	c := API{
+		Log:              e.log(),
+		Addr:             e.str("API_ADDR", ":8088"),
+		MetricsAddr:      e.str("API_METRICS_ADDR", ":9106"),
+		ClickHouse:       e.clickhouse(),
+		Kafka:            e.kafka(),
+		MaxSubscriptions: int(e.int64("API_MAX_SUBSCRIPTIONS", 40)),
+		CatalogTTL:       e.duration("API_CATALOG_TTL", time.Hour),
+		GatewayURL:       e.url("API_GATEWAY_URL", "http://localhost:8090"),
+		AlertsURL:        e.url("API_ALERTS_URL", "http://localhost:8091"),
+	}
+	return c, e.err()
+}
+
+func (e *env) url(key, def string) *url.URL {
+	v := e.str(key, def)
+	u, err := url.Parse(v)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		e.fail("%s: invalid URL %q", key, v)
+		u, _ = url.Parse(def)
+	}
+	return u
 }

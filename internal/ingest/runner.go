@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -45,6 +46,37 @@ type Runner struct {
 	Source string
 
 	live atomic.Bool
+
+	// conn is the open connection, so symbol changes can be sent on it.
+	connMu sync.Mutex
+	conn   *websocket.Conn
+}
+
+// SetSymbols changes the streamed symbols without reconnecting. If no
+// connection is open, the next one starts with the new set.
+func (r *Runner) SetSymbols(ctx context.Context, symbols []string) error {
+	d, ok := r.Feed.(exchange.Dynamic)
+	if !ok {
+		return fmt.Errorf("%s: symbols cannot change at runtime", r.Feed.Name())
+	}
+	frames, err := d.SetSymbols(symbols)
+	if err != nil {
+		return err
+	}
+	r.connMu.Lock()
+	conn := r.conn
+	r.connMu.Unlock()
+	if conn == nil {
+		return nil
+	}
+	for _, f := range frames {
+		if err := conn.Write(ctx, websocket.MessageText, f); err != nil {
+			// The reader will notice the broken connection and reconnect
+			// with the new set.
+			return fmt.Errorf("%s: send subscription change: %w", r.Feed.Name(), err)
+		}
+	}
+	return nil
 }
 
 // Live reports whether the feed is connected and has delivered at least one
@@ -96,7 +128,13 @@ func (r *Runner) session(ctx context.Context, log *slog.Logger) (err error) {
 	if err != nil {
 		return fmt.Errorf("dial: %w", err)
 	}
+	r.connMu.Lock()
+	r.conn = conn
+	r.connMu.Unlock()
 	defer func() {
+		r.connMu.Lock()
+		r.conn = nil
+		r.connMu.Unlock()
 		if ctx.Err() != nil {
 			_ = conn.Close(websocket.StatusNormalClosure, "shutdown")
 			return
@@ -135,6 +173,10 @@ func (r *Runner) session(ctx context.Context, log *slog.Logger) (err error) {
 		r.live.Store(true)
 
 		events, err = r.Feed.Handle(frame, received, events[:0])
+		if se := (*exchange.SymbolError)(nil); errors.As(err, &se) {
+			log.Warn("exchange rejected symbol", "symbol", se.Symbol, "reason", se.Reason)
+			err = nil
+		}
 		if err != nil {
 			return err
 		}

@@ -1,0 +1,107 @@
+:root {
+  --bg: #0d1117;
+  --panel: #131a22;
+  --border: #222b36;
+  --text: #d6dde6;
+  --muted: #7d8794;
+  --up: #26a69a;
+  --down: #ef5350;
+  --accent: #4c8dff;
+  --warn: #f0b429;
+  color-scheme: dark;
+  font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); }
+.app { display: flex; flex-direction: column; height: 100vh; }
+header { display: flex; align-items: center; gap: 16px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+h1 { font-size: 15px; margin: 0; color: var(--muted); font-weight: 600; }
+h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.title { display: flex; gap: 12px; align-items: baseline; }
+.price { font-size: 18px; font-variant-numeric: tabular-nums; }
+.periods button { margin-right: 4px; }
+.status { margin-left: auto; padding: 2px 8px; border-radius: 10px; background: var(--border); }
+.status.open { color: var(--up); }
+.status.reconnecting, .status.connecting { color: var(--warn); }
+main {
+  flex: 1; min-height: 0; display: grid; gap: 8px; padding: 8px;
+  grid-template-columns: 1fr 1fr 1fr 320px;
+  grid-template-rows: 1fr 260px;
+  grid-template-areas: "chart chart chart tape" "markets alerts rules tape";
+}
+.chart { grid-area: chart; position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+.chart-canvas { position: absolute; inset: 0; }
+.overlay { position: absolute; top: 8px; left: 8px; color: var(--warn); }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 10px; overflow: auto; min-height: 0; }
+.tape { grid-area: tape; }
+.markets { grid-area: markets; }
+.alerts { grid-area: alerts; }
+.rules { grid-area: rules; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; color: var(--muted); font-weight: normal; }
+td, th { padding: 2px 4px; }
+tr.buy td:first-child { color: var(--up); }
+tr.sell td:first-child { color: var(--down); }
+tr.whale { background: #f0b42922; font-weight: 700; }
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: #ffffff0a; }
+tr.selected { background: #4c8dff22; }
+td.num { text-align: right; }
+td.up { color: var(--up); }
+td.down { color: var(--down); }
+.muted { color: var(--muted); }
+.error { color: var(--down); }
+ul { list-style: none; margin: 0; padding: 0; }
+li { padding: 4px 0; border-bottom: 1px solid var(--border); }
+.badge { display: inline-block; min-width: 44px; text-align: center; padding: 0 6px; margin-right: 6px; border-radius: 8px; font-size: 11px; background: var(--border); }
+.badge.whale_trade { background: #f0b42933; color: var(--warn); }
+.badge.price_move { background: #4c8dff33; color: var(--accent); }
+.badge.price_rule, .badge.fired { background: #26a69a33; color: var(--up); }
+.badge.armed { background: #4c8dff33; color: var(--accent); }
+li.gone { opacity: .5; }
+form { display: flex; gap: 6px; margin-bottom: 8px; }
+input, select, button { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
+input { flex: 1; min-width: 0; }
+button { cursor: pointer; }
+button.active { border-color: var(--accent); color: var(--accent); }
+button.link { border: 0; background: none; color: var(--accent); padding: 0 0 0 8px; }
+.markets h2, .tape h2 { display: flex; gap: 8px; align-items: baseline; }
+.tape h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tape-toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.tape .toggle { display: flex; gap: 4px; }
+.tape .toggle button { padding: 0 6px; font-size: 11px; }
+.tape .toggle button.buy.active { border-color: var(--up); color: var(--up); }
+.tape .toggle button.sell.active { border-color: var(--down); color: var(--down); }
+.tape { display: flex; flex-direction: column; }
+.tape-body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: auto; }
+.tape-split { flex: 1; min-height: 0; display: grid; grid-template-rows: 1fr 1fr; gap: 8px; }
+.tape .paused { margin-left: auto; color: var(--warn); font-size: 11px; white-space: nowrap; }
+.tape-split .tape-part { overflow: auto; min-height: 0; border-top: 1px solid var(--border); padding-top: 4px; }
+.tape-part h3 { font-size: 11px; margin: 0 0 4px; text-transform: uppercase; letter-spacing: .05em; }
+.tape-part h3.buy { color: var(--up); }
+.tape-part h3.sell { color: var(--down); }
+.markets h2 .link { margin-left: auto; text-transform: none; letter-spacing: 0; }
+td.actions { width: 1%; text-align: right; }
+.add-market { border: 1px solid var(--border); border-radius: 4px; padding: 6px; margin-bottom: 8px; }
+.add-market .row { display: flex; gap: 6px; margin-bottom: 6px; }
+.add-market li { display: flex; justify-content: space-between; padding: 2px 0; }
+button:disabled { opacity: .5; cursor: default; }
+.whale-settings { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.whale-settings h3 { font-size: 11px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .05em; color: var(--warn); }
+.whale-settings form { align-items: center; margin-bottom: 2px; }
+.whale-settings label { min-width: 110px; color: var(--muted); }
+.whale-settings .unit { min-width: 40px; }
+.whale-settings .hint { margin: 0 0 8px; font-size: 11px; }
+.modal-backdrop { position: fixed; inset: 0; background: #0009; display: grid; place-items: center; z-index: 10; }
+.modal { width: min(560px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.modal header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.modal h2 { margin: 0; }
+.modal h3 { font-size: 12px; margin: 12px 0 4px; color: var(--warn); text-transform: uppercase; letter-spacing: .05em; }
+.modal h4 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); font-weight: normal; }
+.modal form { align-items: center; }
+.modal label { white-space: nowrap; color: var(--muted); }
+.modal td.actions { white-space: nowrap; }
+@media (max-width: 900px) {
+  main { grid-template-columns: 1fr; grid-template-rows: 380px auto; grid-template-areas: "chart" "tape" "markets" "alerts" "rules"; }
+  .tape { max-height: 300px; }
+}

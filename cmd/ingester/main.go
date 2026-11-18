@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -24,8 +25,10 @@ import (
 	"marketdata/internal/exchange/kraken"
 	"marketdata/internal/ingest"
 	"marketdata/internal/metrics"
+	"marketdata/internal/model"
 	"marketdata/internal/ops"
 	"marketdata/internal/publish"
+	"marketdata/internal/subs"
 )
 
 func main() {
@@ -104,6 +107,14 @@ func run() error {
 		return err
 	}
 
+	if cfg.Publisher == "kafka" {
+		stopSubs, err := followSubscriptions(ctx, cfg, runners, log)
+		if err != nil {
+			return err
+		}
+		defer stopSubs()
+	}
+
 	log.Info("ingester starting", "publisher", cfg.Publisher, "feeds", len(runners))
 	var wg sync.WaitGroup
 	for _, r := range runners {
@@ -111,6 +122,56 @@ func run() error {
 	}
 	wg.Wait()
 	return nil
+}
+
+// followSubscriptions makes the subscriptions topic drive what each feed
+// streams. Symbols from the ingester config are written there as pinned
+// (idempotent; every replica does it), so the topic is the single list of
+// streamed markets and the UI can add more at runtime.
+func followSubscriptions(ctx context.Context, cfg config.Ingester, runners []*ingest.Runner, log *slog.Logger) (func(), error) {
+	table, err := subs.Open(cfg.Kafka.Brokers, cfg.Kafka.TopicSubscriptions, log)
+	if err != nil {
+		return nil, err
+	}
+	if err := table.Bootstrap(ctx); err != nil {
+		table.Close()
+		return nil, fmt.Errorf("load subscriptions: %w", err)
+	}
+	for _, x := range cfg.Exchanges {
+		for _, sym := range x.Symbols {
+			if s, ok := table.Get(x.Name, sym); ok && s.Pinned {
+				continue
+			}
+			if err := table.Put(ctx, model.Subscription{Exchange: x.Name, Symbol: sym, Pinned: true, CreatedAt: time.Now().UTC()}); err != nil {
+				table.Close()
+				return nil, fmt.Errorf("pin %s %s: %w", x.Name, sym, err)
+			}
+		}
+	}
+
+	var mu sync.Mutex
+	applied := map[string][]string{}
+	apply := func() {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, r := range runners {
+			name := r.Feed.Name()
+			want := table.Symbols(name)
+			if len(want) == 0 || slices.Equal(want, applied[name]) {
+				continue
+			}
+			added, removed := exchange.Diff(applied[name], want)
+			if err := r.SetSymbols(ctx, want); err != nil {
+				log.Error("apply subscriptions failed", "exchange", name, "err", err)
+				continue
+			}
+			applied[name] = want
+			log.Info("subscriptions changed", "exchange", name, "added", added, "removed", removed, "total", len(want))
+		}
+	}
+	apply()
+	go table.Follow(ctx, apply)
+	return table.Close, nil
 }
 
 func newFeed(x config.Exchange) (exchange.Feed, error) {

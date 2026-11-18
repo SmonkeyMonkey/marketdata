@@ -1,12 +1,14 @@
 package binance
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"marketdata/internal/exchange"
 	"marketdata/internal/model"
 )
 
@@ -110,10 +112,42 @@ func TestGapAndDuplicate(t *testing.T) {
 	}
 }
 
-func TestUnsubscribedSymbolIsAnError(t *testing.T) {
+// Trades can still be in flight right after an UNSUBSCRIBE: drop them quietly.
+func TestUnsubscribedSymbolIsIgnored(t *testing.T) {
 	f, _ := New(baseURL, []string{"ETH-USDT"})
-	if _, err := f.Handle(frame(t, "trade_taker_sell.json"), now, nil); err == nil {
-		t.Fatal("want error for BTCUSDT on an ETH-only feed")
+	ev, err := f.Handle(frame(t, "trade_taker_sell.json"), now, nil)
+	if err != nil || len(ev) != 0 {
+		t.Fatalf("got %d events, err %v; want none", len(ev), err)
+	}
+}
+
+func TestSetSymbolsOnLiveConnection(t *testing.T) {
+	f := newFeed(t) // BTC-USDT, ETH-USDT
+	frames, err := f.SetSymbols([]string{"BTC-USDT", "SOL-USDT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`{"id":1,"method":"SUBSCRIBE","params":["solusdt@trade"]}`,
+		`{"id":2,"method":"UNSUBSCRIBE","params":["ethusdt@trade"]}`,
+	}
+	if len(frames) != 2 || string(frames[0]) != want[0] || string(frames[1]) != want[1] {
+		t.Errorf("frames = %s", frames)
+	}
+	// A reconnect starts with the new set.
+	if got := f.URL(); got != baseURL+"?streams=btcusdt@trade/solusdt@trade" {
+		t.Errorf("URL = %s", got)
+	}
+	if frames, _ := f.SetSymbols([]string{"BTC-USDT", "SOL-USDT"}); len(frames) != 0 {
+		t.Errorf("no-op change produced frames: %s", frames)
+	}
+}
+
+func TestSubscribeErrorDoesNotEndSession(t *testing.T) {
+	_, err := newFeed(t).Handle([]byte(`{"error":{"code":2,"msg":"Invalid request"},"id":3}`), now, nil)
+	var se *exchange.SymbolError
+	if !errors.As(err, &se) {
+		t.Fatalf("err = %v, want *exchange.SymbolError", err)
 	}
 }
 

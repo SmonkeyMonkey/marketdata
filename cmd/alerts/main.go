@@ -17,6 +17,7 @@ import (
 	"marketdata/internal/config"
 	"marketdata/internal/metrics"
 	"marketdata/internal/ops"
+	"marketdata/internal/settings"
 )
 
 func main() {
@@ -37,10 +38,21 @@ func run() error {
 	defer stop()
 
 	reg := ops.NewRegistry()
+	// Whale thresholds (default and per market) are edited from the UI.
+	st, err := settings.Open(cfg.Kafka.Brokers, cfg.Kafka.TopicSettings, log)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	if err := st.Bootstrap(ctx); err != nil {
+		return fmt.Errorf("load settings: %w", err)
+	}
+	go st.Follow(ctx, nil)
+
 	svc, err := alerts.NewService(alerts.Options{
+		Settings:       st,
 		Kafka:          cfg.Kafka,
 		Group:          cfg.Group,
-		Whale:          cfg.Whale,
 		MovePct:        cfg.MovePct,
 		MoveWindow:     cfg.MoveWindow,
 		MoveCooldown:   cfg.MoveCooldown,
@@ -78,7 +90,7 @@ func run() error {
 			stop()
 		}
 	}()
-	log.Info("alerts running", "api", cfg.Addr, "whale_notional", cfg.Whale, "move_pct", cfg.MovePct, "move_window", cfg.MoveWindow)
+	log.Info("alerts running", "api", cfg.Addr, "default_whale", st.DefaultWhale(), "move_pct", cfg.MovePct, "move_window", cfg.MoveWindow)
 
 	err = svc.Run(ctx)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

@@ -4,6 +4,8 @@ Real-time crypto market data platform in Go: ingests public exchange websocket
 feeds, normalizes them, and (next stages) streams them through Kafka into
 ClickHouse, real-time analytics, alerts and a websocket gateway.
 
+![Web UI: live candles, trade tape, markets of three exchanges, alerts](docs/dashboard.png)
+
 ## Status
 
 - [x] Stage 0 — skeleton: config from env, Docker, compose (Kafka 4 KRaft, kafka-ui, ClickHouse), CI
@@ -41,6 +43,28 @@ ClickHouse, real-time analytics, alerts and a websocket gateway.
       and never fires it twice under a different ID (tested across a restart). Alerts go to Kafka,
       the gateway (`alerts:<exchange>:<symbol>`, `alerts:rule:<id>`) and ClickHouse. Live check:
       a rule 3 USDT below the market fired 3.3 s after creation and arrived on both channels.
+- [x] Web UI (`frontend/`, React 19 + TypeScript + Vite, TradingView Lightweight Charts): candles
+      with history from ClickHouse and a forming bar updated by every live trade (replaced by the
+      aggregator's closed candle), trade tape with whale highlighting, prices of all markets,
+      live alerts, price-rule form. Served by the `api` service (Go, `go:embed`), which also proxies
+      the gateway websocket and the rules API — one origin, no CORS. `make frontend-dev` for hot reload.
+- [x] Runtime market selection: search any pair an exchange trades (catalogs from the exchanges'
+      REST APIs, cached) and add or remove it from the UI. The set of streamed markets is a compacted
+      Kafka topic (`md.subscriptions`); ingesters pin their configured pairs there and follow it,
+      sending subscribe/unsubscribe on the already-open exchange websockets — no restart, no
+      reconnect (verified live: SOL on three exchanges added with 0 disconnects, removal stops the
+      stream). Both redundant ingesters apply the same changes. A rejected pair is reported without
+      ending the session for the others.
+- [x] Chart intervals 1s · 5s · 15s · 30s · 1m · 5m · 15m · 30m · 1h · 4h · 1d. The aggregator
+      still emits only 1s and 1m (its restart guarantee replays from the oldest open candle — a day
+      of trades for a 1d candle); history is rolled up from them in ClickHouse, the live bar in the
+      browser from closed base candles plus the trades after them, so nothing is counted twice.
+      Checked: rolled-up 5m bars equal Binance's 5m klines, including trade counts.
+- [x] Whale thresholds per market, edited in the UI (default + per-market overrides, in each
+      market's quote currency, so XRP-BTC is set in BTC). Stored in a compacted topic
+      (`md.settings`) through the same generic compacted-table component as subscriptions; the
+      alerts service applies changes live (verified: lowering SOL-USDT to 500 USDT produced alerts
+      from 513 USDT with no restart), and the trade tape highlights by the same threshold.
 - [ ] Stage 3b — Bybit, OKX, Coinbase Advanced
 
 ### Rule index benchmark (one trade checked against n rules of its symbol, Apple M-series core)
@@ -107,6 +131,7 @@ curl -X POST localhost:8091/v1/rules -d '{"exchange":"binance","symbol":"BTC-USD
 
 | UI | URL |
 |---|---|
+| **Web UI** | http://localhost:8088 |
 | Grafana (dashboard "Market Data Pipeline") | http://localhost:3000 |
 | Prometheus | http://localhost:9090 |
 | Kafka UI | http://localhost:8080 |
@@ -124,6 +149,28 @@ internal/publish        event sinks (stdout now, Kafka next)
 internal/backoff        reconnect delay policies
 internal/config         env configuration
 ```
+
+## Known limits of the local setup
+
+- Both ingester replicas run in the same Docker VM. Redundancy covers a process or container
+  restart, not the host: when Docker Desktop's VM froze for ~2 minutes (no samples even in
+  Prometheus), both replicas stalled and `make audit` shows the hole. In production the replicas
+  belong on different hosts/zones.
+- The rules and subscriptions APIs have no authentication (demo).
+
+## TODO
+
+- [ ] **Data retention (ClickHouse TTL).** Tables currently grow without limit; unsubscribing a
+      pair only stops new data, history stays. Add per-table TTLs via a migration, configurable
+      by env, e.g.:
+      - `trades`, 1s `candles`: 30 days
+      - 1m `candles`: 1 year
+      - `alerts`, `gaps`: 90 days
+
+      ClickHouse drops expired data by whole partitions during merges (`ttl_only_drop_parts`),
+      which is cheap. Kafka already has retention (7 days trades, 30 days candles).
+- [ ] Show history of unsubscribed pairs in the UI (it stays in ClickHouse and is served by
+      `/api/candles`, but the market list only shows current subscriptions).
 
 ## Notes
 

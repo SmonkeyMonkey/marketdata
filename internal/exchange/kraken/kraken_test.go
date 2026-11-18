@@ -2,12 +2,14 @@ package kraken
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"marketdata/internal/exchange"
 	"marketdata/internal/model"
 )
 
@@ -134,9 +136,31 @@ func TestControlMessagesAreIgnored(t *testing.T) {
 	}
 }
 
-func TestSubscribeErrorEndsSession(t *testing.T) {
+// A rejected pair is reported, but the session (and the other pairs) live on.
+func TestSubscribeErrorIsPerSymbol(t *testing.T) {
 	_, err := newFeed(t).Handle(frame(t, "subscribe_error.json"), now, nil)
-	if err == nil || !strings.Contains(err.Error(), "Currency pair not supported NOPE/USD") {
+	var se *exchange.SymbolError
+	if !errors.As(err, &se) || se.Symbol != "NOPE/USD" || !strings.Contains(se.Reason, "Currency pair not supported") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestSetSymbols(t *testing.T) {
+	f := newFeed(t) // BTC-USD, ETH-USD
+	frames, err := f.SetSymbols([]string{"BTC-USD", "DOGE-USD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`{"method":"subscribe","params":{"channel":"trade","snapshot":true,"symbol":["DOGE/USD"]}}`,
+		`{"method":"unsubscribe","params":{"channel":"trade","symbol":["ETH/USD"]}}`,
+	}
+	if len(frames) != 2 || string(frames[0]) != want[0] || string(frames[1]) != want[1] {
+		t.Errorf("frames = %s", frames)
+	}
+	// ETH trades still in flight are dropped.
+	eth := []byte(strings.ReplaceAll(string(frame(t, "update.json")), "BTC/USD", "ETH/USD"))
+	if ev := handle(t, f, eth); len(ev) != 0 {
+		t.Errorf("unsubscribed ETH produced %d events", len(ev))
 	}
 }

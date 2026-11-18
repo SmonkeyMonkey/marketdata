@@ -241,7 +241,12 @@ func (w *Writer) flushLocked(ctx context.Context) error {
 		}
 	}
 
-	if err := w.client.CommitRecords(ctx, w.records...); err != nil {
+	// The batch is stored, so its commit must not be skipped because ctx was
+	// cancelled a moment ago (shutdown): that would replay the batch on the
+	// next start. Commit with its own short deadline instead.
+	commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := w.client.CommitRecords(commitCtx, w.records...); err != nil {
 		// Data is stored; a failed commit only means these records may be
 		// read again, and duplicates are collapsed by the table engine.
 		w.log.Warn("offset commit failed", "err", err)

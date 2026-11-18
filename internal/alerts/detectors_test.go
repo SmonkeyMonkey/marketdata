@@ -18,7 +18,7 @@ func tr(id string, at time.Duration, price, size string) model.Trade {
 }
 
 func TestWhale(t *testing.T) {
-	w := Whale{Threshold: decimal.NewFromInt(100_000)}
+	w := StaticWhale(decimal.NewFromInt(100_000))
 	if _, ok := w.Check(tr("1", 0, "65000", "1.5")); ok {
 		t.Error("97.5k flagged")
 	}
@@ -75,5 +75,24 @@ func TestMoveWindowMinExpires(t *testing.T) {
 	}
 	if _, ok := m.Check(tr("3", 70*time.Second, "100.5", "1")); ok {
 		t.Error("measured against an expired low") // vs 100 it is only +0.5%
+	}
+}
+
+// Thresholds are per market and in the quote currency: 0.5 BTC for XRP-BTC.
+func TestWhalePerMarketThreshold(t *testing.T) {
+	w := Whale{Threshold: func(_, symbol string) decimal.Decimal {
+		if symbol == "XRP-BTC" {
+			return decimal.RequireFromString("0.5")
+		}
+		return decimal.NewFromInt(100_000)
+	}}
+	xrp := model.Trade{Exchange: "binance", Symbol: "XRP-BTC", TradeID: "7", TakerSide: model.SideSell,
+		Price: decimal.RequireFromString("0.0000154"), Size: decimal.NewFromInt(50_000)} // 0.77 BTC
+	a, ok := w.Check(xrp)
+	if !ok || !strings.Contains(a.Message, "BTC)") {
+		t.Errorf("XRP-BTC 0.77 BTC: ok=%v %q", ok, a.Message)
+	}
+	if _, ok := w.Check(tr("8", 0, "65000", "1")); ok {
+		t.Error("BTC-USDT 65k flagged with a 100k threshold")
 	}
 }

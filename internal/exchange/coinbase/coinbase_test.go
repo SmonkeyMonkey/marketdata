@@ -1,6 +1,7 @@
 package coinbase
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"marketdata/internal/exchange"
 	"marketdata/internal/model"
 )
 
@@ -40,7 +42,7 @@ func handle(t *testing.T, f *Feed, b []byte) []model.Event {
 }
 
 func TestMatchIsNormalized(t *testing.T) {
-	events := handle(t, New(testURL, nil), frame(t, "match.json"))
+	events := handle(t, New(testURL, []string{"BTC-USD", "ETH-USD"}), frame(t, "match.json"))
 	if len(events) != 1 {
 		t.Fatalf("got %d events, want 1", len(events))
 	}
@@ -74,14 +76,14 @@ func TestMatchIsNormalized(t *testing.T) {
 }
 
 func TestLastMatchIsSnapshot(t *testing.T) {
-	ev := handle(t, New(testURL, nil), frame(t, "last_match.json"))
+	ev := handle(t, New(testURL, []string{"BTC-USD", "ETH-USD"}), frame(t, "last_match.json"))
 	if len(ev) != 1 || !ev[0].(model.Trade).Snapshot {
 		t.Errorf("last_match not marked as snapshot: %+v", ev)
 	}
 }
 
 func TestDuplicateTradesAreDropped(t *testing.T) {
-	f := New(testURL, nil)
+	f := New(testURL, []string{"BTC-USD", "ETH-USD"})
 	handle(t, f, frame(t, "match.json"))
 	if got := handle(t, f, frame(t, "match.json")); len(got) != 0 {
 		t.Errorf("duplicate produced %d events", len(got))
@@ -92,7 +94,7 @@ func TestDuplicateTradesAreDropped(t *testing.T) {
 }
 
 func TestGapBetweenTrades(t *testing.T) {
-	f := New(testURL, nil)
+	f := New(testURL, []string{"BTC-USD", "ETH-USD"})
 	handle(t, f, frame(t, "last_match.json")) // id ...509
 
 	events := handle(t, f, frame(t, "match.json")) // id ...511, so ...510 is missing
@@ -112,7 +114,7 @@ func TestGapBetweenTrades(t *testing.T) {
 }
 
 func TestHeartbeatRevealsGapWithoutTrades(t *testing.T) {
-	f := New(testURL, nil)
+	f := New(testURL, []string{"BTC-USD", "ETH-USD"})
 	handle(t, f, frame(t, "match.json")) // last seen ...511
 
 	events := handle(t, f, frame(t, "heartbeat.json")) // last_trade_id ...515
@@ -134,27 +136,53 @@ func TestHeartbeatRevealsGapWithoutTrades(t *testing.T) {
 }
 
 func TestHeartbeatBeforeAnyTradeIsSilent(t *testing.T) {
-	if got := handle(t, New(testURL, nil), frame(t, "heartbeat.json")); len(got) != 0 {
+	if got := handle(t, New(testURL, []string{"BTC-USD", "ETH-USD"}), frame(t, "heartbeat.json")); len(got) != 0 {
 		t.Errorf("got %d events, want 0", len(got))
 	}
 }
 
 func TestServerErrorEndsSession(t *testing.T) {
-	_, err := New(testURL, nil).Handle(frame(t, "error_auth.json"), now, nil)
+	_, err := New(testURL, []string{"BTC-USD", "ETH-USD"}).Handle(frame(t, "error_auth.json"), now, nil)
 	if err == nil || !strings.Contains(err.Error(), "require authentication") {
 		t.Fatalf("err = %v, want server error", err)
 	}
 }
 
 func TestIgnoredMessages(t *testing.T) {
-	if got := handle(t, New(testURL, nil), frame(t, "subscriptions.json")); len(got) != 0 {
+	if got := handle(t, New(testURL, []string{"BTC-USD", "ETH-USD"}), frame(t, "subscriptions.json")); len(got) != 0 {
 		t.Errorf("got %d events, want 0", len(got))
 	}
 }
 
 func TestMalformedFrame(t *testing.T) {
-	if _, err := New(testURL, nil).Handle([]byte(`{"type":`), now, nil); err == nil {
+	if _, err := New(testURL, []string{"BTC-USD", "ETH-USD"}).Handle([]byte(`{"type":`), now, nil); err == nil {
 		t.Fatal("want decode error")
+	}
+}
+
+func TestSetSymbols(t *testing.T) {
+	f := New(testURL, []string{"BTC-USD", "ETH-USD"})
+	frames, err := f.SetSymbols([]string{"BTC-USD", "SOL-USD"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`{"channels":["matches","heartbeat"],"product_ids":["SOL-USD"],"type":"subscribe"}`,
+		`{"channels":["matches","heartbeat"],"product_ids":["ETH-USD"],"type":"unsubscribe"}`,
+	}
+	if len(frames) != 2 || string(frames[0]) != want[0] || string(frames[1]) != want[1] {
+		t.Errorf("frames = %s", frames)
+	}
+	if ev := handle(t, f, []byte(strings.Replace(string(frame(t, "match.json")), "BTC-USD", "ETH-USD", 1))); len(ev) != 0 {
+		t.Errorf("unsubscribed product produced %d events", len(ev))
+	}
+}
+
+func TestInvalidProductIsPerSymbol(t *testing.T) {
+	_, err := New(testURL, nil).Handle([]byte(`{"type":"error","message":"Failed to subscribe","reason":"NOPE-USD is not a valid product"}`), now, nil)
+	var se *exchange.SymbolError
+	if !errors.As(err, &se) || se.Symbol != "NOPE-USD" {
+		t.Fatalf("err = %v, want SymbolError for NOPE-USD", err)
 	}
 }
 

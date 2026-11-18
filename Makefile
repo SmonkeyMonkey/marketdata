@@ -7,7 +7,7 @@ endif
 INGESTERS := ingester-a ingester-b
 CH := docker compose exec -T clickhouse clickhouse-client -u $${CLICKHOUSE_USER:-marketdata} --password $${CLICKHOUSE_PASSWORD:-marketdata} -d marketdata
 
-.PHONY: build test lint proto dashboard run-ingester run-writer up down logs deploy-ingesters audit verify-candles load
+.PHONY: build test lint proto dashboard run-ingester run-writer up down logs deploy-ingesters audit verify-candles load frontend frontend-dev frontend-check
 
 build:
 	go build -o bin/ ./cmd/...
@@ -26,6 +26,17 @@ bin/buf: tools/go.mod
 proto: bin/buf
 	./bin/buf lint
 	./bin/buf generate
+
+# Web UI. `make frontend` builds it into frontend/dist (embedded by the api
+# service); `make frontend-dev` runs Vite with hot reload against the stack.
+frontend:
+	cd frontend && npm ci && npm run build
+
+frontend-dev:
+	cd frontend && npm run dev
+
+frontend-check:
+	cd frontend && npm run typecheck && npm test
 
 dashboard:
 	node deploy/grafana/dashboards.mjs deploy/grafana/dashboards/pipeline.json
