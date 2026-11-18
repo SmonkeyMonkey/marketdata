@@ -149,3 +149,62 @@ func TestRunnerStopsWhileWaitingToReconnect(t *testing.T) {
 		t.Fatal("Run did not stop on cancel")
 	}
 }
+
+// dynFeed adds runtime symbol changes to echoFeed.
+type dynFeed struct{ echoFeed }
+
+func (dynFeed) SetSymbols(symbols []string) ([][]byte, error) {
+	return [][]byte{[]byte("set:" + strings.Join(symbols, ","))}, nil
+}
+
+func TestSetSymbolsIsSentOnTheOpenConnection(t *testing.T) {
+	got := make(chan string, 8)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer c.CloseNow()
+		for {
+			_, msg, err := c.Read(r.Context())
+			if err != nil {
+				return
+			}
+			got <- string(msg)
+			if string(msg) == "subscribe" {
+				_ = c.Write(r.Context(), websocket.MessageText, []byte("hello")) // makes the feed live
+			}
+		}
+	}))
+	defer srv.Close()
+
+	pub := &collector{got: make(chan struct{}, 16)}
+	r := newRunner(wsURL(srv), pub, time.Minute)
+	r.Feed = dynFeed{echoFeed{url: wsURL(srv)}}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = r.Run(ctx) }()
+
+	if m := <-got; m != "subscribe" {
+		t.Fatalf("first frame = %q", m)
+	}
+	wait(t, pub, 1)
+	if err := r.SetSymbols(ctx, []string{"SOL-USD"}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case m := <-got:
+		if m != "set:SOL-USD" {
+			t.Errorf("frame = %q", m)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("subscription change never reached the server")
+	}
+}
+
+func TestSetSymbolsOnStaticFeedFails(t *testing.T) {
+	r := newRunner("ws://unused", &collector{got: make(chan struct{}, 1)}, time.Second)
+	if err := r.SetSymbols(context.Background(), []string{"X-Y"}); err == nil {
+		t.Fatal("want error for a feed without runtime symbol changes")
+	}
+}

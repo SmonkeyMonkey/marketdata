@@ -8,7 +8,10 @@ package coinbase
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -22,6 +25,9 @@ const Name = "coinbase"
 // Feed implements exchange.Feed. Coinbase product IDs (BTC-USD) are already
 // in canonical form.
 type Feed struct {
+	// mu guards products and ids: Handle runs on the reader goroutine while
+	// SetSymbols is called by the subscription controller.
+	mu       sync.Mutex
 	url      string
 	products []string
 	// Trade IDs are sequential per product; kept across reconnects so the
@@ -29,25 +35,63 @@ type Feed struct {
 	ids *exchange.TradeIDs
 }
 
-var _ exchange.Feed = (*Feed)(nil)
+var (
+	_ exchange.Feed    = (*Feed)(nil)
+	_ exchange.Dynamic = (*Feed)(nil)
+)
 
 func New(url string, products []string) *Feed {
-	return &Feed{url: url, products: products, ids: exchange.NewTradeIDs(Name)}
+	return &Feed{url: url, products: slices.Clone(products), ids: exchange.NewTradeIDs(Name)}
 }
 
 func (f *Feed) Name() string { return Name }
 func (f *Feed) URL() string  { return f.url }
 
 func (f *Feed) Subscriptions() ([][]byte, error) {
-	msg, err := json.Marshal(map[string]any{
-		"type":        "subscribe",
-		"product_ids": f.products,
-		"channels":    []string{"matches", "heartbeat"},
-	})
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.products) == 0 {
+		return nil, nil
+	}
+	msg, err := request("subscribe", f.products)
 	if err != nil {
 		return nil, err
 	}
 	return [][]byte{msg}, nil
+}
+
+func (f *Feed) SetSymbols(symbols []string) ([][]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	added, removed := exchange.Diff(f.products, symbols)
+	f.products = slices.Clone(symbols)
+	var frames [][]byte
+	if len(added) > 0 {
+		m, err := request("subscribe", added)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, m)
+	}
+	if len(removed) > 0 {
+		m, err := request("unsubscribe", removed)
+		if err != nil {
+			return nil, err
+		}
+		frames = append(frames, m)
+		for _, p := range removed {
+			f.ids.Forget(p)
+		}
+	}
+	return frames, nil
+}
+
+func request(typ string, products []string) ([]byte, error) {
+	return json.Marshal(map[string]any{
+		"type":        typ,
+		"product_ids": products,
+		"channels":    []string{"matches", "heartbeat"},
+	})
 }
 
 // message is a union of the fields we need from all handled message types.
@@ -69,9 +113,14 @@ func (f *Feed) Handle(frame []byte, received time.Time, dst []model.Event) ([]mo
 	if err := json.Unmarshal(frame, &m); err != nil {
 		return dst, fmt.Errorf("coinbase: decode frame: %w", err)
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
 	switch m.Type {
 	case "match", "last_match":
+		if !slices.Contains(f.products, m.ProductID) {
+			return dst, nil // in flight when we unsubscribed
+		}
 		// last_match is sent once after subscribing: the latest trade before
 		// our session. After a reconnect it reveals trades we missed.
 		var dup bool
@@ -102,6 +151,10 @@ func (f *Feed) Handle(frame []byte, received time.Time, dst []model.Event) ([]mo
 		return f.ids.AdvanceTo(m.ProductID, m.LastTradeID, received, dst), nil
 
 	case "error":
+		// e.g. "XYZ-USD is not a valid product": only that product fails.
+		if p, ok := strings.CutSuffix(m.Reason, " is not a valid product"); ok {
+			return dst, &exchange.SymbolError{Symbol: p, Reason: m.Reason}
+		}
 		return dst, fmt.Errorf("coinbase: server error: %s: %s", m.Message, m.Reason)
 
 	default: // subscriptions, ticker, etc.

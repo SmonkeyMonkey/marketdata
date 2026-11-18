@@ -220,3 +220,17 @@ func DecodeAlert(b []byte) (model.Alert, error) {
 	}
 	return a, nil
 }
+
+func EncodeSubscription(s model.Subscription) ([]byte, error) {
+	return proto.Marshal(&pb.Subscription{
+		Exchange: s.Exchange, Symbol: s.Symbol, Pinned: s.Pinned, CreatedUnixNano: unixNano(s.CreatedAt),
+	})
+}
+
+func DecodeSubscription(b []byte) (model.Subscription, error) {
+	var m pb.Subscription
+	if err := proto.Unmarshal(b, &m); err != nil {
+		return model.Subscription{}, fmt.Errorf("decode subscription: %w", err)
+	}
+	return model.Subscription{Exchange: m.Exchange, Symbol: m.Symbol, Pinned: m.Pinned, CreatedAt: fromUnixNano(m.CreatedUnixNano)}, nil
+}

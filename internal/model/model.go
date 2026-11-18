@@ -223,3 +223,13 @@ type Alert struct {
 
 func (Alert) Kind() string { return "alert" }
 func (Alert) event()       {}
+
+// Subscription is a market the ingesters stream.
+type Subscription struct {
+	Exchange  string    `json:"exchange"`
+	Symbol    string    `json:"symbol"`
+	Pinned    bool      `json:"pinned"` // from ingester config; not removable via the API
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (s Subscription) Key() string { return s.Exchange + ":" + s.Symbol }

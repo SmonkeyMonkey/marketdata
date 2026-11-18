@@ -57,3 +57,7 @@ func (t *TradeIDs) gap(symbol string, after, before int64, now time.Time) model.
 		DetectedAt: now,
 	}
 }
+
+// Forget drops the state of a symbol (e.g. after unsubscribing), so a later
+// resubscription does not report the whole pause as missed trades.
+func (t *TradeIDs) Forget(symbol string) { delete(t.last, symbol) }

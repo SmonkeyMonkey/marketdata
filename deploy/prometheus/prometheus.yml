@@ -18,6 +18,9 @@ scrape_configs:
   - job_name: alerts
     static_configs:
       - targets: ["alerts:9105"]
+  - job_name: api
+    static_configs:
+      - targets: ["api:9106"]
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
