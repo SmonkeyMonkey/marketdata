@@ -38,6 +38,8 @@ type Kafka struct {
 	TopicRules   string
 	// TopicSubscriptions is the compacted topic of streamed markets.
 	TopicSubscriptions string
+	// TopicSettings is the compacted topic of per-market alert settings.
+	TopicSettings string
 }
 
 type Aggregator struct {
@@ -259,6 +261,7 @@ func (e *env) kafka() Kafka {
 		TopicAlerts:        e.str("KAFKA_TOPIC_ALERTS", "md.alerts"),
 		TopicRules:         e.str("KAFKA_TOPIC_ALERT_RULES", "md.alert-rules"),
 		TopicSubscriptions: e.str("KAFKA_TOPIC_SUBSCRIPTIONS", "md.subscriptions"),
+		TopicSettings:      e.str("KAFKA_TOPIC_SETTINGS", "md.settings"),
 	}
 	if len(k.Brokers) == 0 {
 		e.fail("KAFKA_BROKERS must not be empty")
@@ -373,7 +376,6 @@ type Alerts struct {
 	MetricsAddr    string
 	Kafka          Kafka
 	Group          string
-	Whale          decimal.Decimal
 	MovePct        decimal.Decimal
 	MoveWindow     time.Duration
 	MoveCooldown   time.Duration
@@ -390,7 +392,6 @@ func LoadAlerts() (Alerts, error) {
 		MetricsAddr:    e.str("ALERTS_METRICS_ADDR", ":9105"),
 		Kafka:          e.kafka(),
 		Group:          e.str("ALERTS_CONSUMER_GROUP", "alerts"),
-		Whale:          e.decimal("ALERT_WHALE_NOTIONAL", "100000"),
 		MovePct:        e.decimal("ALERT_MOVE_PCT", "0.5"),
 		MoveWindow:     e.duration("ALERT_MOVE_WINDOW", time.Minute),
 		MoveCooldown:   e.duration("ALERT_MOVE_COOLDOWN", 5*time.Minute),

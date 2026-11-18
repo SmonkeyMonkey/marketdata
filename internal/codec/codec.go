@@ -234,3 +234,22 @@ func DecodeSubscription(b []byte) (model.Subscription, error) {
 	}
 	return model.Subscription{Exchange: m.Exchange, Symbol: m.Symbol, Pinned: m.Pinned, CreatedAt: fromUnixNano(m.CreatedUnixNano)}, nil
 }
+
+func EncodeSettings(s model.MarketSettings) ([]byte, error) {
+	return proto.Marshal(&pb.MarketSettings{
+		Exchange: s.Exchange, Symbol: s.Symbol, WhaleNotional: s.WhaleNotional.String(),
+		UpdatedUnixNano: unixNano(s.UpdatedAt),
+	})
+}
+
+func DecodeSettings(b []byte) (model.MarketSettings, error) {
+	var m pb.MarketSettings
+	if err := proto.Unmarshal(b, &m); err != nil {
+		return model.MarketSettings{}, fmt.Errorf("decode settings: %w", err)
+	}
+	whale, err := decimal.NewFromString(m.WhaleNotional)
+	if err != nil {
+		return model.MarketSettings{}, fmt.Errorf("decode settings whale %q: %w", m.WhaleNotional, err)
+	}
+	return model.MarketSettings{Exchange: m.Exchange, Symbol: m.Symbol, WhaleNotional: whale, UpdatedAt: fromUnixNano(m.UpdatedUnixNano)}, nil
+}

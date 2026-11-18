@@ -1,4 +1,4 @@
-import type { AlertRow, CandleRow, Instrument, Market, Period, Rule, TradeRow } from '../types'
+import type { AlertRow, CandleRow, Instrument, Market, Period, Rule, Settings, TradeRow } from '../types'
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -13,6 +13,15 @@ const q = (params: Record<string, string | number>) =>
 
 export const api = {
   markets: () => fetch('/api/markets').then(json<Market[]>),
+  settings: () => fetch('/api/settings').then(json<Settings>),
+  /** Sets the whale threshold of a market, or the default when m is null. */
+  setWhale: (m: Market | null, value: string) =>
+    fetch(m ? `/api/settings/${m.exchange}/${m.symbol}` : '/api/settings/default', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ whale_notional: value }),
+    }).then(json<Settings>),
+  resetWhale: (m: Market) => fetch(`/api/settings/${m.exchange}/${m.symbol}`, { method: 'DELETE' }).then(json<Settings>),
   catalog: (exchange: string, q: string, limit = 20) =>
     fetch(`/api/catalog?${new URLSearchParams({ exchange, q, limit: String(limit) })}`).then(json<Instrument[]>),
   subscribe: (m: Market) =>

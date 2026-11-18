@@ -61,7 +61,7 @@ export function RulesPanel({ market, lastPrice }: { market: Market; lastPrice: s
   }
 
   return (
-    <section className="panel rules">
+    <div>
       <h2>Price alerts <span className="muted">{market.exchange} {market.symbol}</span></h2>
       <form onSubmit={submit}>
         <select value={direction} onChange={(e) => setDirection(e.target.value as 'above' | 'below')}>
@@ -83,6 +83,6 @@ export function RulesPanel({ market, lastPrice }: { market: Market; lastPrice: s
           </li>
         ))}
       </ul>
-    </section>
+    </div>
   )
 }

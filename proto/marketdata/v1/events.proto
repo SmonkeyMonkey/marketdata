@@ -102,6 +102,17 @@ message Subscription {
   int64 created_unix_nano = 4;
 }
 
+// MarketSettings holds per-market alert settings in a compacted topic keyed
+// by exchange:symbol; the key "*" (empty exchange and symbol) is the
+// default for markets without their own record.
+message MarketSettings {
+  string exchange = 1;
+  string symbol = 2;
+  // Whale trade threshold: price * size in the quote currency.
+  string whale_notional = 3;
+  int64 updated_unix_nano = 4;
+}
+
 // Gap reports trades missed between two observed trade IDs.
 message Gap {
   string exchange = 1;

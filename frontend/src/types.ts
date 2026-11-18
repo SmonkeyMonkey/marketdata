@@ -108,6 +108,18 @@ export interface Rule {
   channel: string
 }
 
+// Alert settings (GET /api/settings). Whale thresholds are in each market's
+// quote currency; "0" disables whale alerts.
+export interface Settings {
+  default_whale: Decimal
+  markets: { exchange: string; symbol: string; whale_notional: Decimal }[]
+}
+
+export const quoteOf = (symbol: string) => symbol.slice(symbol.lastIndexOf('-') + 1)
+
+export const whaleFor = (s: Settings | null, m: Market): Decimal | null =>
+  s ? (s.markets.find((x) => x.exchange === m.exchange && x.symbol === m.symbol)?.whale_notional ?? s.default_whale) : null
+
 export const channels = {
   trades: (m: Market) => `trades:${m.exchange}:${m.symbol}`,
   candles: (m: Market, p: BasePeriod) => `candles:${m.exchange}:${m.symbol}:${p}`,

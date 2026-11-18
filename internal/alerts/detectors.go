@@ -10,14 +10,22 @@ import (
 )
 
 // Whale flags single trades whose notional (price*size, in quote currency)
-// reaches Threshold.
+// reaches the market's threshold. Thresholds differ per market: $100k is
+// routine for BTC-USDT, rare for SOL, and meaningless for XRP-BTC (BTC).
 type Whale struct {
-	Threshold decimal.Decimal
+	// Threshold returns a market's threshold; 0 disables whale alerts.
+	Threshold func(exchange, symbol string) decimal.Decimal
+}
+
+// StaticWhale uses one threshold for every market.
+func StaticWhale(threshold decimal.Decimal) Whale {
+	return Whale{Threshold: func(string, string) decimal.Decimal { return threshold }}
 }
 
 func (w Whale) Check(t model.Trade) (model.Alert, bool) {
+	threshold := w.Threshold(t.Exchange, t.Symbol)
 	notional := t.Price.Mul(t.Size)
-	if w.Threshold.IsZero() || notional.LessThan(w.Threshold) {
+	if threshold.IsZero() || notional.LessThan(threshold) {
 		return model.Alert{}, false
 	}
 	_, quote := splitQuote(t.Symbol)

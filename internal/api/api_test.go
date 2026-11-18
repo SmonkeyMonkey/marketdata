@@ -64,6 +64,56 @@ func (f *fakeSubs) Delete(_ context.Context, ex, sym string) error {
 	return nil
 }
 
+type fakeSettings struct {
+	def     decimal.Decimal
+	markets map[string]model.MarketSettings
+}
+
+func (f *fakeSettings) DefaultWhale() decimal.Decimal { return f.def }
+func (f *fakeSettings) Markets() []model.MarketSettings {
+	var out []model.MarketSettings
+	for _, m := range f.markets {
+		out = append(out, m)
+	}
+	return out
+}
+func (f *fakeSettings) SetWhale(_ context.Context, ex, sym string, v decimal.Decimal) error {
+	if ex == "" {
+		f.def = v
+		return nil
+	}
+	if f.markets == nil {
+		f.markets = map[string]model.MarketSettings{}
+	}
+	f.markets[ex+":"+sym] = model.MarketSettings{Exchange: ex, Symbol: sym, WhaleNotional: v}
+	return nil
+}
+func (f *fakeSettings) ResetWhale(_ context.Context, ex, sym string) error {
+	delete(f.markets, ex+":"+sym)
+	return nil
+}
+
+func TestSettings(t *testing.T) {
+	s, _ := server(t, &fakeHistory{}, nil)
+	if _, body := get(t, s.URL+"/api/settings"); !strings.Contains(body, `"default_whale":"100000"`) || !strings.Contains(body, `"markets":[]`) {
+		t.Fatalf("initial = %s", body)
+	}
+	if c, body := send(t, "PUT", s.URL+"/api/settings/binance/XRP-BTC", `{"whale_notional":"0.5"}`); c != 200 || !strings.Contains(body, `"whale_notional":"0.5"`) {
+		t.Errorf("set market -> %d %s", c, body)
+	}
+	if c, body := send(t, "PUT", s.URL+"/api/settings/default", `{"whale_notional":"250000"}`); c != 200 || !strings.Contains(body, `"default_whale":"250000"`) {
+		t.Errorf("set default -> %d %s", c, body)
+	}
+	for _, bad := range []string{`{"whale_notional":"-1"}`, `{"whale_notional":"lots"}`, `nope`} {
+		if c, _ := send(t, "PUT", s.URL+"/api/settings/default", bad); c != 400 {
+			t.Errorf("%s -> %d, want 400", bad, c)
+		}
+	}
+	if c, body := send(t, "DELETE", s.URL+"/api/settings/binance/XRP-BTC", ""); c != 200 || strings.Contains(body, "XRP-BTC") {
+		t.Errorf("reset -> %d %s", c, body)
+	}
+}
+
 type fakeCatalog struct{}
 
 var instruments = []exchange.Instrument{
@@ -188,7 +238,7 @@ func server(t *testing.T, h History, frontend fstest.MapFS) (*httptest.Server, *
 	u, _ := url.Parse(upstream.URL)
 	s := httptest.NewServer(Handler(Options{
 		History: h, Frontend: frontend, Gateway: u, Alerts: u,
-		Subs: newFakeSubs(), Catalog: fakeCatalog{}, MaxSubscriptions: 2,
+		Subs: newFakeSubs(), Catalog: fakeCatalog{}, MaxSubscriptions: 2, Settings: &fakeSettings{def: decimal.NewFromInt(100_000)},
 		Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}))
 	t.Cleanup(s.Close)

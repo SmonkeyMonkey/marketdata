@@ -233,3 +233,22 @@ type Subscription struct {
 }
 
 func (s Subscription) Key() string { return s.Exchange + ":" + s.Symbol }
+
+// MarketSettings are alert settings of one market; empty Exchange and Symbol
+// mean the default for all markets.
+type MarketSettings struct {
+	Exchange      string          `json:"exchange,omitempty"`
+	Symbol        string          `json:"symbol,omitempty"`
+	WhaleNotional decimal.Decimal `json:"whale_notional"` // quote currency
+	UpdatedAt     time.Time       `json:"updated_at"`
+}
+
+// DefaultSettingsKey is the key of the default MarketSettings record.
+const DefaultSettingsKey = "*"
+
+func (s MarketSettings) Key() string {
+	if s.Exchange == "" && s.Symbol == "" {
+		return DefaultSettingsKey
+	}
+	return s.Exchange + ":" + s.Symbol
+}

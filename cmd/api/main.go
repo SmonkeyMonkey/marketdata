@@ -22,6 +22,7 @@ import (
 	"marketdata/internal/exchange/kraken"
 	"marketdata/internal/metrics"
 	"marketdata/internal/ops"
+	"marketdata/internal/settings"
 	"marketdata/internal/store"
 	"marketdata/internal/subs"
 )
@@ -73,12 +74,22 @@ func run() error {
 		kraken.Name:   fetcher(kraken.Catalog, kraken.CatalogURL),
 	})
 
+	st, err := settings.Open(cfg.Kafka.Brokers, cfg.Kafka.TopicSettings, log)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	if err := st.Bootstrap(ctx); err != nil {
+		return fmt.Errorf("load settings: %w", err)
+	}
+	go st.Follow(ctx, nil)
+
 	m := metrics.NewHTTP(reg)
 	srv := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.Handler(api.Options{
 			History: ch, Frontend: frontend.Files(),
-			Subs: table, Catalog: cat, MaxSubscriptions: cfg.MaxSubscriptions,
+			Subs: table, Catalog: cat, MaxSubscriptions: cfg.MaxSubscriptions, Settings: st,
 			Gateway: cfg.GatewayURL, Alerts: cfg.AlertsURL,
 			Log: log, Observe: m.Observe,
 		}),

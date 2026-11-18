@@ -209,6 +209,7 @@ services:
         # of each rule (and drops tombstoned ones) forever.
         $$T --bootstrap-server $$B --create --if-not-exists --topic md.alert-rules --partitions 1 --replication-factor 1 --config cleanup.policy=compact
         $$T --bootstrap-server $$B --create --if-not-exists --topic md.subscriptions --partitions 1 --replication-factor 1 --config cleanup.policy=compact
+        $$T --bootstrap-server $$B --create --if-not-exists --topic md.settings --partitions 1 --replication-factor 1 --config cleanup.policy=compact
     restart: "no"
 
   kafka-ui:

@@ -4,10 +4,12 @@ import { MarketsBoard } from './components/MarketsBoard'
 import { PriceChart } from './components/PriceChart'
 import { RulesPanel } from './components/RulesPanel'
 import { TradeTape } from './components/TradeTape'
+import { SettingsDialog } from './components/SettingsDialog'
+import { WhaleSettings } from './components/WhaleSettings'
 import { api } from './lib/api'
 import { fmtPrice } from './lib/format'
 import { useLastPrice, useSocketState } from './lib/hooks'
-import { marketKey, PERIODS, type Market, type Period } from './types'
+import { marketKey, PERIODS, whaleFor, type Market, type Period, type Settings } from './types'
 
 export function App() {
   const [markets, setMarkets] = useState<Market[]>([])
@@ -17,6 +19,8 @@ export function App() {
     return (PERIODS as readonly string[]).includes(p ?? '') ? (p as Period) : '1m'
   })
   const [error, setError] = useState<string | null>(null)
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const state = useSocketState()
   const { price: lastPrice, precision } = useLastPrice(market)
 
@@ -32,6 +36,7 @@ export function App() {
           ?? ms.find((m) => m.exchange === 'binance' && m.symbol === 'BTC-USDT') ?? ms[0] ?? null
       })
     }, (e: Error) => setError(e.message))
+    api.settings().then(setSettings, () => {})
   }, [])
 
   // The selected market lives in the URL (?m=binance:PUMP-USDC), so a chart
@@ -66,15 +71,20 @@ export function App() {
           ))}
         </div>
         <span className={`status ${state}`}>{state === 'open' ? 'live' : state}</span>
+        <button onClick={() => setSettingsOpen(true)}>Settings</button>
       </header>
       {error && <p className="error">Cannot load markets: {error}</p>}
+      {settingsOpen && <SettingsDialog settings={settings} onSaved={setSettings} onClose={() => setSettingsOpen(false)} />}
       {market && (
         <main>
           <PriceChart market={market} period={period} />
-          <TradeTape market={market} />
+          <TradeTape market={market} whale={Number(whaleFor(settings, market) ?? 0) || null} />
           <MarketsBoard markets={markets} selected={market} onSelect={setMarket} onChanged={loadMarkets} />
           <AlertsPanel markets={markets} />
-          <RulesPanel market={market} lastPrice={lastPrice} />
+          <section className="panel rules">
+            <RulesPanel market={market} lastPrice={lastPrice} />
+            <WhaleSettings market={market} settings={settings} onSaved={setSettings} onOpenSettings={() => setSettingsOpen(true)} />
+          </section>
         </main>
       )}
     </div>

@@ -744,6 +744,78 @@ func (x *Subscription) GetCreatedUnixNano() int64 {
 	return 0
 }
 
+// MarketSettings holds per-market alert settings in a compacted topic keyed
+// by exchange:symbol; the key "*" (empty exchange and symbol) is the
+// default for markets without their own record.
+type MarketSettings struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Exchange string                 `protobuf:"bytes,1,opt,name=exchange,proto3" json:"exchange,omitempty"`
+	Symbol   string                 `protobuf:"bytes,2,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	// Whale trade threshold: price * size in the quote currency.
+	WhaleNotional   string `protobuf:"bytes,3,opt,name=whale_notional,json=whaleNotional,proto3" json:"whale_notional,omitempty"`
+	UpdatedUnixNano int64  `protobuf:"varint,4,opt,name=updated_unix_nano,json=updatedUnixNano,proto3" json:"updated_unix_nano,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *MarketSettings) Reset() {
+	*x = MarketSettings{}
+	mi := &file_marketdata_v1_events_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MarketSettings) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MarketSettings) ProtoMessage() {}
+
+func (x *MarketSettings) ProtoReflect() protoreflect.Message {
+	mi := &file_marketdata_v1_events_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MarketSettings.ProtoReflect.Descriptor instead.
+func (*MarketSettings) Descriptor() ([]byte, []int) {
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *MarketSettings) GetExchange() string {
+	if x != nil {
+		return x.Exchange
+	}
+	return ""
+}
+
+func (x *MarketSettings) GetSymbol() string {
+	if x != nil {
+		return x.Symbol
+	}
+	return ""
+}
+
+func (x *MarketSettings) GetWhaleNotional() string {
+	if x != nil {
+		return x.WhaleNotional
+	}
+	return ""
+}
+
+func (x *MarketSettings) GetUpdatedUnixNano() int64 {
+	if x != nil {
+		return x.UpdatedUnixNano
+	}
+	return 0
+}
+
 // Gap reports trades missed between two observed trade IDs.
 type Gap struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -761,7 +833,7 @@ type Gap struct {
 
 func (x *Gap) Reset() {
 	*x = Gap{}
-	mi := &file_marketdata_v1_events_proto_msgTypes[5]
+	mi := &file_marketdata_v1_events_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -773,7 +845,7 @@ func (x *Gap) String() string {
 func (*Gap) ProtoMessage() {}
 
 func (x *Gap) ProtoReflect() protoreflect.Message {
-	mi := &file_marketdata_v1_events_proto_msgTypes[5]
+	mi := &file_marketdata_v1_events_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -786,7 +858,7 @@ func (x *Gap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Gap.ProtoReflect.Descriptor instead.
 func (*Gap) Descriptor() ([]byte, []int) {
-	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{5}
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Gap) GetExchange() string {
@@ -901,7 +973,12 @@ const file_marketdata_v1_events_proto_rawDesc = "" +
 	"\bexchange\x18\x01 \x01(\tR\bexchange\x12\x16\n" +
 	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12\x16\n" +
 	"\x06pinned\x18\x03 \x01(\bR\x06pinned\x12*\n" +
-	"\x11created_unix_nano\x18\x04 \x01(\x03R\x0fcreatedUnixNano\"\xd6\x01\n" +
+	"\x11created_unix_nano\x18\x04 \x01(\x03R\x0fcreatedUnixNano\"\x97\x01\n" +
+	"\x0eMarketSettings\x12\x1a\n" +
+	"\bexchange\x18\x01 \x01(\tR\bexchange\x12\x16\n" +
+	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12%\n" +
+	"\x0ewhale_notional\x18\x03 \x01(\tR\rwhaleNotional\x12*\n" +
+	"\x11updated_unix_nano\x18\x04 \x01(\x03R\x0fupdatedUnixNano\"\xd6\x01\n" +
 	"\x03Gap\x12\x1a\n" +
 	"\bexchange\x18\x01 \x01(\tR\bexchange\x12\x16\n" +
 	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12\x19\n" +
@@ -937,17 +1014,18 @@ func file_marketdata_v1_events_proto_rawDescGZIP() []byte {
 }
 
 var file_marketdata_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_marketdata_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_marketdata_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_marketdata_v1_events_proto_goTypes = []any{
-	(Side)(0),            // 0: marketdata.v1.Side
-	(Direction)(0),       // 1: marketdata.v1.Direction
-	(AlertType)(0),       // 2: marketdata.v1.AlertType
-	(*Trade)(nil),        // 3: marketdata.v1.Trade
-	(*Candle)(nil),       // 4: marketdata.v1.Candle
-	(*AlertRule)(nil),    // 5: marketdata.v1.AlertRule
-	(*Alert)(nil),        // 6: marketdata.v1.Alert
-	(*Subscription)(nil), // 7: marketdata.v1.Subscription
-	(*Gap)(nil),          // 8: marketdata.v1.Gap
+	(Side)(0),              // 0: marketdata.v1.Side
+	(Direction)(0),         // 1: marketdata.v1.Direction
+	(AlertType)(0),         // 2: marketdata.v1.AlertType
+	(*Trade)(nil),          // 3: marketdata.v1.Trade
+	(*Candle)(nil),         // 4: marketdata.v1.Candle
+	(*AlertRule)(nil),      // 5: marketdata.v1.AlertRule
+	(*Alert)(nil),          // 6: marketdata.v1.Alert
+	(*Subscription)(nil),   // 7: marketdata.v1.Subscription
+	(*MarketSettings)(nil), // 8: marketdata.v1.MarketSettings
+	(*Gap)(nil),            // 9: marketdata.v1.Gap
 }
 var file_marketdata_v1_events_proto_depIdxs = []int32{
 	0, // 0: marketdata.v1.Trade.taker_side:type_name -> marketdata.v1.Side
@@ -971,7 +1049,7 @@ func file_marketdata_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_marketdata_v1_events_proto_rawDesc), len(file_marketdata_v1_events_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   6,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

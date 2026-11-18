@@ -8,8 +8,6 @@ import { channels, type Market, type TradeRow } from '../types'
 const ROWS = 60
 // Trades kept per side (see tapeBuffer).
 const KEEP = 300
-// Same default as the alerts service's ALERT_WHALE_NOTIONAL.
-const WHALE_NOTIONAL = 100_000
 
 // Which taker side to show; colours follow exchange convention
 // (green = buyer was the taker, red = seller).
@@ -25,7 +23,8 @@ const loadFilter = (): Filter => {
   }
 }
 
-export function TradeTape({ market }: { market: Market }) {
+/** whale: the market's whale threshold (same as the alerts service); 0 or null: none. */
+export function TradeTape({ market, whale }: { market: Market; whale: number | null }) {
   const [tape, setTape] = useState<TapeBuffer>(emptyTape)
   const [filter, setFilter] = useState<Filter>(loadFilter)
   // While the pointer is over the list it shows a frozen snapshot, so rows
@@ -76,7 +75,7 @@ export function TradeTape({ market }: { market: Market }) {
         <thead><tr><th>Price</th><th>Size</th><th>Time</th></tr></thead>
         <tbody>
           {list.map((t) => (
-            <tr key={t.id} className={`${t.side} ${Number(t.price) * Number(t.size) >= WHALE_NOTIONAL ? 'whale' : ''}`}>
+            <tr key={t.id} className={`${t.side} ${whale && Number(t.price) * Number(t.size) >= whale ? 'whale' : ''}`}>
               <td>{fmtPrice(t.price, precision)}</td>
               <td>{fmtSize(t.size)}</td>
               <td className="muted">{fmtTime(t.time)}</td>

@@ -60,6 +60,11 @@ ClickHouse, real-time analytics, alerts and a websocket gateway.
       of trades for a 1d candle); history is rolled up from them in ClickHouse, the live bar in the
       browser from closed base candles plus the trades after them, so nothing is counted twice.
       Checked: rolled-up 5m bars equal Binance's 5m klines, including trade counts.
+- [x] Whale thresholds per market, edited in the UI (default + per-market overrides, in each
+      market's quote currency, so XRP-BTC is set in BTC). Stored in a compacted topic
+      (`md.settings`) through the same generic compacted-table component as subscriptions; the
+      alerts service applies changes live (verified: lowering SOL-USDT to 500 USDT produced alerts
+      from 513 USDT with no restart), and the trade tape highlights by the same threshold.
 - [ ] Stage 3b — Bybit, OKX, Coinbase Advanced
 
 ### Rule index benchmark (one trade checked against n rules of its symbol, Apple M-series core)

@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/shopspring/decimal"
+
 	"marketdata/internal/exchange"
 	"marketdata/internal/model"
 	"marketdata/internal/store"
@@ -27,6 +29,14 @@ type Subscriptions interface {
 	Get(exchange, symbol string) (model.Subscription, bool)
 	Put(ctx context.Context, s model.Subscription) error
 	Delete(ctx context.Context, exchange, symbol string) error
+}
+
+// Settings are per-market alert settings (*settings.Store).
+type Settings interface {
+	DefaultWhale() decimal.Decimal
+	Markets() []model.MarketSettings
+	SetWhale(ctx context.Context, exchange, symbol string, v decimal.Decimal) error
+	ResetWhale(ctx context.Context, exchange, symbol string) error
 }
 
 // Catalog lists what each exchange trades (*catalog.Cache).
@@ -44,9 +54,10 @@ type History interface {
 }
 
 type Options struct {
-	History History
-	Subs    Subscriptions
-	Catalog Catalog
+	History  History
+	Subs     Subscriptions
+	Catalog  Catalog
+	Settings Settings
 	// MaxSubscriptions caps markets added through the API (pinned ones from
 	// ingester config don't count).
 	MaxSubscriptions int
@@ -66,6 +77,10 @@ func Handler(o Options) http.Handler {
 	route("GET /api/catalog", h.catalog)
 	route("POST /api/subscriptions", h.subscribe)
 	route("DELETE /api/subscriptions/{exchange}/{symbol}", h.unsubscribe)
+	route("GET /api/settings", h.getSettings)
+	route("PUT /api/settings/default", h.putSettings)
+	route("PUT /api/settings/{exchange}/{symbol}", h.putSettings)
+	route("DELETE /api/settings/{exchange}/{symbol}", h.resetSettings)
 	route("GET /api/candles", h.candles)
 	route("GET /api/trades", h.trades)
 	route("GET /api/alerts", h.alerts)
@@ -199,6 +214,53 @@ func (h *handler) unsubscribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type settingsResponse struct {
+	DefaultWhale decimal.Decimal        `json:"default_whale"`
+	Markets      []model.MarketSettings `json:"markets"`
+}
+
+// getSettings returns the default whale threshold and per-market overrides.
+func (h *handler) getSettings(w http.ResponseWriter, _ *http.Request) {
+	markets := h.o.Settings.Markets()
+	if markets == nil {
+		markets = []model.MarketSettings{}
+	}
+	writeJSON(w, http.StatusOK, settingsResponse{DefaultWhale: h.o.Settings.DefaultWhale(), Markets: markets})
+}
+
+// putSettings sets the whale threshold of one market, or the default
+// (/api/settings/default). Body: {"whale_notional": "250000"}; 0 disables.
+func (h *handler) putSettings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		WhaleNotional string `json:"whale_notional"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
+		return
+	}
+	v, err := decimal.NewFromString(strings.TrimSpace(req.WhaleNotional))
+	if err != nil || v.IsNegative() {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "whale_notional must be a non-negative decimal (0 disables)"})
+		return
+	}
+	if err := h.o.Settings.SetWhale(r.Context(), r.PathValue("exchange"), r.PathValue("symbol"), v); err != nil {
+		h.o.Log.Error("save settings failed", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not save settings"})
+		return
+	}
+	h.getSettings(w, r)
+}
+
+// resetSettings drops a market's own threshold; the default applies again.
+func (h *handler) resetSettings(w http.ResponseWriter, r *http.Request) {
+	if err := h.o.Settings.ResetWhale(r.Context(), r.PathValue("exchange"), r.PathValue("symbol")); err != nil {
+		h.o.Log.Error("reset settings failed", "err", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "could not save settings"})
+		return
+	}
+	h.getSettings(w, r)
 }
 
 func slicesContains(s []string, v string) bool {

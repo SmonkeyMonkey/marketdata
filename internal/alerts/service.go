@@ -20,10 +20,18 @@ import (
 	"marketdata/internal/model"
 )
 
+// WhaleSettings gives per-market whale thresholds (*settings.Store).
+type WhaleSettings interface {
+	Whale(exchange, symbol string) decimal.Decimal
+}
+
 type Options struct {
-	Kafka          config.Kafka
-	Group          string
+	Kafka config.Kafka
+	Group string
+	// Whale is one threshold for every market, used only when Settings is
+	// nil (tests).
 	Whale          decimal.Decimal
+	Settings       WhaleSettings
 	MovePct        decimal.Decimal
 	MoveWindow     time.Duration
 	MoveCooldown   time.Duration
@@ -60,9 +68,12 @@ func NewService(opts Options, log *slog.Logger, kopts ...kgo.Opt) (*Service, err
 	}
 	s := &Service{
 		opts: opts, log: log, idx: NewIndex(),
-		whale: Whale{Threshold: opts.Whale},
+		whale: StaticWhale(opts.Whale),
 		move:  &Move{Pct: opts.MovePct, Window: opts.MoveWindow, Cooldown: opts.MoveCooldown},
 		seen:  dedup.NewWindow(opts.DedupWindow),
+	}
+	if opts.Settings != nil {
+		s.whale = Whale{Threshold: opts.Settings.Whale}
 	}
 	opts.Metrics.WatchRules(func() int {
 		s.mu.Lock()
