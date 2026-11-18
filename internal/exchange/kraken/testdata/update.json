@@ -1,0 +1,1 @@
+{"channel":"trade","type":"update","data":[{"symbol":"BTC/USD","side":"buy","price":64549.1,"qty":0.00116178,"ord_type":"limit","trade_id":116531709,"timestamp":"2026-11-17T15:16:45.028548Z"},{"symbol":"BTC/USD","side":"buy","price":64549.1,"qty":0.00011008,"ord_type":"limit","trade_id":116531710,"timestamp":"2026-11-17T15:16:45.028548Z"}]}

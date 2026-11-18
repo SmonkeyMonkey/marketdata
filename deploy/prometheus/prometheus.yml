@@ -1,0 +1,23 @@
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: ingester
+    static_configs:
+      - targets: ["ingester-a:9101", "ingester-b:9101"]
+  - job_name: writer
+    static_configs:
+      - targets: ["writer:9102"]
+  - job_name: aggregator
+    static_configs:
+      - targets: ["aggregator:9103"]
+  - job_name: gateway
+    static_configs:
+      - targets: ["gateway:9104"]
+  - job_name: alerts
+    static_configs:
+      - targets: ["alerts:9105"]
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

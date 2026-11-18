@@ -1,0 +1,7 @@
+version: v2
+plugins:
+  # Runs the protoc-gen-go pinned in go.mod, so generated code always matches
+  # the protobuf runtime version.
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: internal/gen
+    opt: paths=source_relative

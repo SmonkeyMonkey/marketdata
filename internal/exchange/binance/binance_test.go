@@ -1,0 +1,124 @@
+package binance
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"marketdata/internal/model"
+)
+
+const baseURL = "wss://stream.binance.com:9443/stream"
+
+var now = time.Date(2026, 11, 17, 15, 16, 48, 0, time.UTC)
+
+func frame(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join("testdata", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func newFeed(t *testing.T) *Feed {
+	t.Helper()
+	f, err := New(baseURL, []string{"BTC-USDT", "ETH-USDT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func trades(t *testing.T, f *Feed, b []byte) []model.Event {
+	t.Helper()
+	ev, err := f.Handle(b, now, nil)
+	if err != nil {
+		t.Fatalf("Handle: %v", err)
+	}
+	return ev
+}
+
+func TestURLSelectsTradeStreams(t *testing.T) {
+	want := baseURL + "?streams=btcusdt@trade/ethusdt@trade"
+	if got := newFeed(t).URL(); got != want {
+		t.Errorf("URL = %s, want %s", got, want)
+	}
+}
+
+func TestRejectsNonCanonicalSymbols(t *testing.T) {
+	for _, s := range []string{"BTCUSDT", "btc-usdt", "BTC-", "-USDT"} {
+		if _, err := New(baseURL, []string{s}); err == nil {
+			t.Errorf("New(%q) succeeded, want error", s)
+		}
+	}
+}
+
+func TestTradeIsNormalized(t *testing.T) {
+	ev := trades(t, newFeed(t), frame(t, "trade_taker_sell.json"))
+	if len(ev) != 1 {
+		t.Fatalf("got %d events", len(ev))
+	}
+	tr := ev[0].(model.Trade)
+	if tr.Exchange != "binance" || tr.Symbol != "BTC-USDT" || tr.TradeID != "6873309016" {
+		t.Errorf("identity: %+v", tr)
+	}
+	if tr.Price.String() != "64626.54" || tr.Size.String() != "0.00155" {
+		t.Errorf("price/size = %s/%s", tr.Price, tr.Size)
+	}
+	// m=true: buyer is maker, so the taker sold.
+	if tr.TakerSide != model.SideSell {
+		t.Errorf("taker side = %s, want sell", tr.TakerSide)
+	}
+	// T (trade time), not E (event time).
+	if want := time.UnixMilli(1794928607465).UTC(); !tr.ExchangeTime.Equal(want) {
+		t.Errorf("exchange time = %s, want %s", tr.ExchangeTime, want)
+	}
+}
+
+func TestTakerBuy(t *testing.T) {
+	tr := trades(t, newFeed(t), frame(t, "trade_taker_buy.json"))[0].(model.Trade)
+	if tr.TakerSide != model.SideBuy {
+		t.Errorf("taker side = %s, want buy", tr.TakerSide)
+	}
+}
+
+func TestSequentialTradesHaveNoGap(t *testing.T) {
+	f := newFeed(t)
+	trades(t, f, frame(t, "trade_taker_sell.json")) // ...016
+	ev := trades(t, f, frame(t, "trade_taker_buy.json"))
+	if len(ev) != 1 {
+		t.Fatalf("got %d events, want just the trade", len(ev))
+	}
+}
+
+func TestGapAndDuplicate(t *testing.T) {
+	f := newFeed(t)
+	trades(t, f, frame(t, "trade_taker_sell.json")) // ...016
+	jump := []byte(strings.Replace(string(frame(t, "trade_taker_buy.json")), "6873309017", "6873309020", 1))
+	ev := trades(t, f, jump)
+	if len(ev) != 2 {
+		t.Fatalf("got %d events, want gap + trade", len(ev))
+	}
+	if g := ev[0].(model.Gap); g.Missing != 3 || g.Symbol != "BTC-USDT" {
+		t.Errorf("gap = %+v", g)
+	}
+	if ev := trades(t, f, frame(t, "trade_taker_sell.json")); len(ev) != 0 {
+		t.Errorf("old trade produced %d events", len(ev))
+	}
+}
+
+func TestUnsubscribedSymbolIsAnError(t *testing.T) {
+	f, _ := New(baseURL, []string{"ETH-USDT"})
+	if _, err := f.Handle(frame(t, "trade_taker_sell.json"), now, nil); err == nil {
+		t.Fatal("want error for BTCUSDT on an ETH-only feed")
+	}
+}
+
+func TestNonTradeFramesAreIgnored(t *testing.T) {
+	if ev := trades(t, newFeed(t), []byte(`{"result":null,"id":1}`)); len(ev) != 0 {
+		t.Errorf("got %d events", len(ev))
+	}
+}

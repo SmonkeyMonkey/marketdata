@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package marketdata.v1;
+
+option go_package = "marketdata/internal/gen/marketdata/v1;marketdatav1";
+
+enum Side {
+  SIDE_UNSPECIFIED = 0;
+  SIDE_BUY = 1;
+  SIDE_SELL = 2;
+}
+
+// Trade is a single execution. Decimal values are strings so they stay exact
+// regardless of an exchange's precision. Times are Unix nanoseconds (UTC).
+message Trade {
+  string exchange = 1;
+  // Canonical BASE-QUOTE, e.g. BTC-USD.
+  string symbol = 2;
+  string trade_id = 3;
+  string price = 4;
+  string size = 5;
+  Side taker_side = 6;
+  int64 exchange_time_unix_nano = 7;
+  int64 receive_time_unix_nano = 8;
+  // Historical trade replayed on subscribe, not a live one.
+  bool snapshot = 9;
+}
+
+// Candle is an OHLCV bar of one symbol on one exchange over
+// [start, start + interval). Volumes are in base units; VWAP is
+// quote_volume / volume.
+message Candle {
+  string exchange = 1;
+  string symbol = 2;
+  int64 interval_ms = 3;
+  int64 start_unix_nano = 4;
+  string open = 5;
+  string high = 6;
+  string low = 7;
+  string close = 8;
+  string volume = 9;
+  string quote_volume = 10;
+  string buy_volume = 11;
+  string sell_volume = 12;
+  int64 trades = 13;
+  string first_trade_id = 14;
+  string last_trade_id = 15;
+}
+
+enum Direction {
+  DIRECTION_UNSPECIFIED = 0;
+  // Fires on the first trade at or above the price.
+  DIRECTION_ABOVE = 1;
+  // Fires on the first trade at or below the price.
+  DIRECTION_BELOW = 2;
+}
+
+// AlertRule is a one-shot user price alert. Rules live in a compacted topic
+// keyed by id; deleting or firing a rule writes a tombstone.
+message AlertRule {
+  string id = 1;
+  string exchange = 2;
+  string symbol = 3;
+  Direction direction = 4;
+  string price = 5;
+  int64 created_unix_nano = 6;
+  string note = 7;
+}
+
+enum AlertType {
+  ALERT_TYPE_UNSPECIFIED = 0;
+  ALERT_TYPE_PRICE_RULE = 1;
+  ALERT_TYPE_WHALE_TRADE = 2;
+  ALERT_TYPE_PRICE_MOVE = 3;
+}
+
+// Alert is a fired alert. id is deterministic, so a replay after a crash
+// produces the same id and consumers can drop the duplicate.
+message Alert {
+  string id = 1;
+  AlertType type = 2;
+  string exchange = 3;
+  string symbol = 4;
+  string message = 5;
+  string price = 6;
+  int64 time_unix_nano = 7;
+  string rule_id = 8;
+  string trade_id = 9;
+  string notional = 10;
+  string change_pct = 11;
+  int64 window_ms = 12;
+}
+
+// Gap reports trades missed between two observed trade IDs.
+message Gap {
+  string exchange = 1;
+  string symbol = 2;
+  string after_id = 3;
+  string before_id = 4;
+  int64 missing = 5;
+  int64 detected_at_unix_nano = 6;
+  // Ingester instance that missed the trades.
+  string source = 7;
+}
