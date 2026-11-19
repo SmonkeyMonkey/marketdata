@@ -128,6 +128,7 @@ const (
 	AlertType_ALERT_TYPE_PRICE_RULE  AlertType = 1
 	AlertType_ALERT_TYPE_WHALE_TRADE AlertType = 2
 	AlertType_ALERT_TYPE_PRICE_MOVE  AlertType = 3
+	AlertType_ALERT_TYPE_ARBITRAGE   AlertType = 4
 )
 
 // Enum value maps for AlertType.
@@ -137,12 +138,14 @@ var (
 		1: "ALERT_TYPE_PRICE_RULE",
 		2: "ALERT_TYPE_WHALE_TRADE",
 		3: "ALERT_TYPE_PRICE_MOVE",
+		4: "ALERT_TYPE_ARBITRAGE",
 	}
 	AlertType_value = map[string]int32{
 		"ALERT_TYPE_UNSPECIFIED": 0,
 		"ALERT_TYPE_PRICE_RULE":  1,
 		"ALERT_TYPE_WHALE_TRADE": 2,
 		"ALERT_TYPE_PRICE_MOVE":  3,
+		"ALERT_TYPE_ARBITRAGE":   4,
 	}
 )
 
@@ -1057,6 +1060,465 @@ func (x *Gap) GetSource() string {
 	return ""
 }
 
+// ArbVenue is one market's top of book for cross-exchange comparison.
+// Prices are converted to the asset's common quote (USDT and USDC to USD).
+type ArbVenue struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Exchange string                 `protobuf:"bytes,1,opt,name=exchange,proto3" json:"exchange,omitempty"`
+	Symbol   string                 `protobuf:"bytes,2,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	Bid      string                 `protobuf:"bytes,3,opt,name=bid,proto3" json:"bid,omitempty"`
+	Ask      string                 `protobuf:"bytes,4,opt,name=ask,proto3" json:"ask,omitempty"`
+	BidSize  string                 `protobuf:"bytes,5,opt,name=bid_size,json=bidSize,proto3" json:"bid_size,omitempty"`
+	AskSize  string                 `protobuf:"bytes,6,opt,name=ask_size,json=askSize,proto3" json:"ask_size,omitempty"`
+	// Native quote -> common quote rate the prices were converted with.
+	Rate string `protobuf:"bytes,7,opt,name=rate,proto3" json:"rate,omitempty"`
+	// Where the rate came from: "1" for the common quote itself, a market
+	// (kraken:USDT-USD) or "peg" when that market has no fresh book.
+	RateSource       string `protobuf:"bytes,8,opt,name=rate_source,json=rateSource,proto3" json:"rate_source,omitempty"`
+	TakerFeeBps      string `protobuf:"bytes,9,opt,name=taker_fee_bps,json=takerFeeBps,proto3" json:"taker_fee_bps,omitempty"`
+	BookTimeUnixNano int64  `protobuf:"varint,10,opt,name=book_time_unix_nano,json=bookTimeUnixNano,proto3" json:"book_time_unix_nano,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ArbVenue) Reset() {
+	*x = ArbVenue{}
+	mi := &file_marketdata_v1_events_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArbVenue) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArbVenue) ProtoMessage() {}
+
+func (x *ArbVenue) ProtoReflect() protoreflect.Message {
+	mi := &file_marketdata_v1_events_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArbVenue.ProtoReflect.Descriptor instead.
+func (*ArbVenue) Descriptor() ([]byte, []int) {
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ArbVenue) GetExchange() string {
+	if x != nil {
+		return x.Exchange
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetSymbol() string {
+	if x != nil {
+		return x.Symbol
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetBid() string {
+	if x != nil {
+		return x.Bid
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetAsk() string {
+	if x != nil {
+		return x.Ask
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetBidSize() string {
+	if x != nil {
+		return x.BidSize
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetAskSize() string {
+	if x != nil {
+		return x.AskSize
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetRate() string {
+	if x != nil {
+		return x.Rate
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetRateSource() string {
+	if x != nil {
+		return x.RateSource
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetTakerFeeBps() string {
+	if x != nil {
+		return x.TakerFeeBps
+	}
+	return ""
+}
+
+func (x *ArbVenue) GetBookTimeUnixNano() int64 {
+	if x != nil {
+		return x.BookTimeUnixNano
+	}
+	return 0
+}
+
+// ArbRoute is buying on one market and selling on another at once.
+type ArbRoute struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	BuyExchange  string                 `protobuf:"bytes,1,opt,name=buy_exchange,json=buyExchange,proto3" json:"buy_exchange,omitempty"`
+	BuySymbol    string                 `protobuf:"bytes,2,opt,name=buy_symbol,json=buySymbol,proto3" json:"buy_symbol,omitempty"`
+	SellExchange string                 `protobuf:"bytes,3,opt,name=sell_exchange,json=sellExchange,proto3" json:"sell_exchange,omitempty"`
+	SellSymbol   string                 `protobuf:"bytes,4,opt,name=sell_symbol,json=sellSymbol,proto3" json:"sell_symbol,omitempty"`
+	// Best ask of the buy market, best bid of the sell market (common quote).
+	BuyPrice  string `protobuf:"bytes,5,opt,name=buy_price,json=buyPrice,proto3" json:"buy_price,omitempty"`
+	SellPrice string `protobuf:"bytes,6,opt,name=sell_price,json=sellPrice,proto3" json:"sell_price,omitempty"`
+	// Top-of-book spread before and after both taker fees, in basis points.
+	GrossBps string `protobuf:"bytes,7,opt,name=gross_bps,json=grossBps,proto3" json:"gross_bps,omitempty"`
+	NetBps   string `protobuf:"bytes,8,opt,name=net_bps,json=netBps,proto3" json:"net_bps,omitempty"`
+	// Base amount that can be traded while it stays profitable after fees,
+	// walking both books, and the profit over it (common quote).
+	Size          string `protobuf:"bytes,9,opt,name=size,proto3" json:"size,omitempty"`
+	Profit        string `protobuf:"bytes,10,opt,name=profit,proto3" json:"profit,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArbRoute) Reset() {
+	*x = ArbRoute{}
+	mi := &file_marketdata_v1_events_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArbRoute) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArbRoute) ProtoMessage() {}
+
+func (x *ArbRoute) ProtoReflect() protoreflect.Message {
+	mi := &file_marketdata_v1_events_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArbRoute.ProtoReflect.Descriptor instead.
+func (*ArbRoute) Descriptor() ([]byte, []int) {
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ArbRoute) GetBuyExchange() string {
+	if x != nil {
+		return x.BuyExchange
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetBuySymbol() string {
+	if x != nil {
+		return x.BuySymbol
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetSellExchange() string {
+	if x != nil {
+		return x.SellExchange
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetSellSymbol() string {
+	if x != nil {
+		return x.SellSymbol
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetBuyPrice() string {
+	if x != nil {
+		return x.BuyPrice
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetSellPrice() string {
+	if x != nil {
+		return x.SellPrice
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetGrossBps() string {
+	if x != nil {
+		return x.GrossBps
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetNetBps() string {
+	if x != nil {
+		return x.NetBps
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetSize() string {
+	if x != nil {
+		return x.Size
+	}
+	return ""
+}
+
+func (x *ArbRoute) GetProfit() string {
+	if x != nil {
+		return x.Profit
+	}
+	return ""
+}
+
+// ArbSnapshot compares every market of one asset (e.g. BTC-USD: coinbase
+// BTC-USD, kraken BTC-USD, binance BTC-USDT). Published at most every
+// ~250 ms per asset; short retention.
+type ArbSnapshot struct {
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	Asset        string                 `protobuf:"bytes,1,opt,name=asset,proto3" json:"asset,omitempty"`
+	TimeUnixNano int64                  `protobuf:"varint,2,opt,name=time_unix_nano,json=timeUnixNano,proto3" json:"time_unix_nano,omitempty"`
+	Venues       []*ArbVenue            `protobuf:"bytes,3,rep,name=venues,proto3" json:"venues,omitempty"`
+	// Every ordered pair of venues, best net first.
+	Routes        []*ArbRoute `protobuf:"bytes,4,rep,name=routes,proto3" json:"routes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArbSnapshot) Reset() {
+	*x = ArbSnapshot{}
+	mi := &file_marketdata_v1_events_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArbSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArbSnapshot) ProtoMessage() {}
+
+func (x *ArbSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_marketdata_v1_events_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArbSnapshot.ProtoReflect.Descriptor instead.
+func (*ArbSnapshot) Descriptor() ([]byte, []int) {
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ArbSnapshot) GetAsset() string {
+	if x != nil {
+		return x.Asset
+	}
+	return ""
+}
+
+func (x *ArbSnapshot) GetTimeUnixNano() int64 {
+	if x != nil {
+		return x.TimeUnixNano
+	}
+	return 0
+}
+
+func (x *ArbSnapshot) GetVenues() []*ArbVenue {
+	if x != nil {
+		return x.Venues
+	}
+	return nil
+}
+
+func (x *ArbSnapshot) GetRoutes() []*ArbRoute {
+	if x != nil {
+		return x.Routes
+	}
+	return nil
+}
+
+// ArbWindow is one closed opportunity: a route that stayed profitable after
+// fees from opened to closed. id is derived from the route and the book that
+// opened it, so replicas produce the same id.
+type ArbWindow struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Id             string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Asset          string                 `protobuf:"bytes,2,opt,name=asset,proto3" json:"asset,omitempty"`
+	BuyExchange    string                 `protobuf:"bytes,3,opt,name=buy_exchange,json=buyExchange,proto3" json:"buy_exchange,omitempty"`
+	BuySymbol      string                 `protobuf:"bytes,4,opt,name=buy_symbol,json=buySymbol,proto3" json:"buy_symbol,omitempty"`
+	SellExchange   string                 `protobuf:"bytes,5,opt,name=sell_exchange,json=sellExchange,proto3" json:"sell_exchange,omitempty"`
+	SellSymbol     string                 `protobuf:"bytes,6,opt,name=sell_symbol,json=sellSymbol,proto3" json:"sell_symbol,omitempty"`
+	OpenedUnixNano int64                  `protobuf:"varint,7,opt,name=opened_unix_nano,json=openedUnixNano,proto3" json:"opened_unix_nano,omitempty"`
+	ClosedUnixNano int64                  `protobuf:"varint,8,opt,name=closed_unix_nano,json=closedUnixNano,proto3" json:"closed_unix_nano,omitempty"`
+	PeakNetBps     string                 `protobuf:"bytes,9,opt,name=peak_net_bps,json=peakNetBps,proto3" json:"peak_net_bps,omitempty"`
+	PeakGrossBps   string                 `protobuf:"bytes,10,opt,name=peak_gross_bps,json=peakGrossBps,proto3" json:"peak_gross_bps,omitempty"`
+	// Largest profitable size and its profit seen during the window.
+	PeakSize   string `protobuf:"bytes,11,opt,name=peak_size,json=peakSize,proto3" json:"peak_size,omitempty"`
+	PeakProfit string `protobuf:"bytes,12,opt,name=peak_profit,json=peakProfit,proto3" json:"peak_profit,omitempty"`
+	// Evaluations (book updates) during which the window was open.
+	Updates       int64 `protobuf:"varint,13,opt,name=updates,proto3" json:"updates,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ArbWindow) Reset() {
+	*x = ArbWindow{}
+	mi := &file_marketdata_v1_events_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ArbWindow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ArbWindow) ProtoMessage() {}
+
+func (x *ArbWindow) ProtoReflect() protoreflect.Message {
+	mi := &file_marketdata_v1_events_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ArbWindow.ProtoReflect.Descriptor instead.
+func (*ArbWindow) Descriptor() ([]byte, []int) {
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ArbWindow) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetAsset() string {
+	if x != nil {
+		return x.Asset
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetBuyExchange() string {
+	if x != nil {
+		return x.BuyExchange
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetBuySymbol() string {
+	if x != nil {
+		return x.BuySymbol
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetSellExchange() string {
+	if x != nil {
+		return x.SellExchange
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetSellSymbol() string {
+	if x != nil {
+		return x.SellSymbol
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetOpenedUnixNano() int64 {
+	if x != nil {
+		return x.OpenedUnixNano
+	}
+	return 0
+}
+
+func (x *ArbWindow) GetClosedUnixNano() int64 {
+	if x != nil {
+		return x.ClosedUnixNano
+	}
+	return 0
+}
+
+func (x *ArbWindow) GetPeakNetBps() string {
+	if x != nil {
+		return x.PeakNetBps
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetPeakGrossBps() string {
+	if x != nil {
+		return x.PeakGrossBps
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetPeakSize() string {
+	if x != nil {
+		return x.PeakSize
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetPeakProfit() string {
+	if x != nil {
+		return x.PeakProfit
+	}
+	return ""
+}
+
+func (x *ArbWindow) GetUpdates() int64 {
+	if x != nil {
+		return x.Updates
+	}
+	return 0
+}
+
 var File_marketdata_v1_events_proto protoreflect.FileDescriptor
 
 const file_marketdata_v1_events_proto_rawDesc = "" +
@@ -1144,7 +1606,59 @@ const file_marketdata_v1_events_proto_rawDesc = "" +
 	"\tbefore_id\x18\x04 \x01(\tR\bbeforeId\x12\x18\n" +
 	"\amissing\x18\x05 \x01(\x03R\amissing\x121\n" +
 	"\x15detected_at_unix_nano\x18\x06 \x01(\x03R\x12detectedAtUnixNano\x12\x16\n" +
-	"\x06source\x18\a \x01(\tR\x06source*9\n" +
+	"\x06source\x18\a \x01(\tR\x06source\"\xa0\x02\n" +
+	"\bArbVenue\x12\x1a\n" +
+	"\bexchange\x18\x01 \x01(\tR\bexchange\x12\x16\n" +
+	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12\x10\n" +
+	"\x03bid\x18\x03 \x01(\tR\x03bid\x12\x10\n" +
+	"\x03ask\x18\x04 \x01(\tR\x03ask\x12\x19\n" +
+	"\bbid_size\x18\x05 \x01(\tR\abidSize\x12\x19\n" +
+	"\bask_size\x18\x06 \x01(\tR\aaskSize\x12\x12\n" +
+	"\x04rate\x18\a \x01(\tR\x04rate\x12\x1f\n" +
+	"\vrate_source\x18\b \x01(\tR\n" +
+	"rateSource\x12\"\n" +
+	"\rtaker_fee_bps\x18\t \x01(\tR\vtakerFeeBps\x12-\n" +
+	"\x13book_time_unix_nano\x18\n" +
+	" \x01(\x03R\x10bookTimeUnixNano\"\xb0\x02\n" +
+	"\bArbRoute\x12!\n" +
+	"\fbuy_exchange\x18\x01 \x01(\tR\vbuyExchange\x12\x1d\n" +
+	"\n" +
+	"buy_symbol\x18\x02 \x01(\tR\tbuySymbol\x12#\n" +
+	"\rsell_exchange\x18\x03 \x01(\tR\fsellExchange\x12\x1f\n" +
+	"\vsell_symbol\x18\x04 \x01(\tR\n" +
+	"sellSymbol\x12\x1b\n" +
+	"\tbuy_price\x18\x05 \x01(\tR\bbuyPrice\x12\x1d\n" +
+	"\n" +
+	"sell_price\x18\x06 \x01(\tR\tsellPrice\x12\x1b\n" +
+	"\tgross_bps\x18\a \x01(\tR\bgrossBps\x12\x17\n" +
+	"\anet_bps\x18\b \x01(\tR\x06netBps\x12\x12\n" +
+	"\x04size\x18\t \x01(\tR\x04size\x12\x16\n" +
+	"\x06profit\x18\n" +
+	" \x01(\tR\x06profit\"\xab\x01\n" +
+	"\vArbSnapshot\x12\x14\n" +
+	"\x05asset\x18\x01 \x01(\tR\x05asset\x12$\n" +
+	"\x0etime_unix_nano\x18\x02 \x01(\x03R\ftimeUnixNano\x12/\n" +
+	"\x06venues\x18\x03 \x03(\v2\x17.marketdata.v1.ArbVenueR\x06venues\x12/\n" +
+	"\x06routes\x18\x04 \x03(\v2\x17.marketdata.v1.ArbRouteR\x06routes\"\xad\x03\n" +
+	"\tArbWindow\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
+	"\x05asset\x18\x02 \x01(\tR\x05asset\x12!\n" +
+	"\fbuy_exchange\x18\x03 \x01(\tR\vbuyExchange\x12\x1d\n" +
+	"\n" +
+	"buy_symbol\x18\x04 \x01(\tR\tbuySymbol\x12#\n" +
+	"\rsell_exchange\x18\x05 \x01(\tR\fsellExchange\x12\x1f\n" +
+	"\vsell_symbol\x18\x06 \x01(\tR\n" +
+	"sellSymbol\x12(\n" +
+	"\x10opened_unix_nano\x18\a \x01(\x03R\x0eopenedUnixNano\x12(\n" +
+	"\x10closed_unix_nano\x18\b \x01(\x03R\x0eclosedUnixNano\x12 \n" +
+	"\fpeak_net_bps\x18\t \x01(\tR\n" +
+	"peakNetBps\x12$\n" +
+	"\x0epeak_gross_bps\x18\n" +
+	" \x01(\tR\fpeakGrossBps\x12\x1b\n" +
+	"\tpeak_size\x18\v \x01(\tR\bpeakSize\x12\x1f\n" +
+	"\vpeak_profit\x18\f \x01(\tR\n" +
+	"peakProfit\x12\x18\n" +
+	"\aupdates\x18\r \x01(\x03R\aupdates*9\n" +
 	"\x04Side\x12\x14\n" +
 	"\x10SIDE_UNSPECIFIED\x10\x00\x12\f\n" +
 	"\bSIDE_BUY\x10\x01\x12\r\n" +
@@ -1152,12 +1666,13 @@ const file_marketdata_v1_events_proto_rawDesc = "" +
 	"\tDirection\x12\x19\n" +
 	"\x15DIRECTION_UNSPECIFIED\x10\x00\x12\x13\n" +
 	"\x0fDIRECTION_ABOVE\x10\x01\x12\x13\n" +
-	"\x0fDIRECTION_BELOW\x10\x02*y\n" +
+	"\x0fDIRECTION_BELOW\x10\x02*\x93\x01\n" +
 	"\tAlertType\x12\x1a\n" +
 	"\x16ALERT_TYPE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15ALERT_TYPE_PRICE_RULE\x10\x01\x12\x1a\n" +
 	"\x16ALERT_TYPE_WHALE_TRADE\x10\x02\x12\x19\n" +
-	"\x15ALERT_TYPE_PRICE_MOVE\x10\x03B4Z2marketdata/internal/gen/marketdata/v1;marketdatav1b\x06proto3"
+	"\x15ALERT_TYPE_PRICE_MOVE\x10\x03\x12\x18\n" +
+	"\x14ALERT_TYPE_ARBITRAGE\x10\x04B4Z2marketdata/internal/gen/marketdata/v1;marketdatav1b\x06proto3"
 
 var (
 	file_marketdata_v1_events_proto_rawDescOnce sync.Once
@@ -1172,7 +1687,7 @@ func file_marketdata_v1_events_proto_rawDescGZIP() []byte {
 }
 
 var file_marketdata_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_marketdata_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_marketdata_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_marketdata_v1_events_proto_goTypes = []any{
 	(Side)(0),              // 0: marketdata.v1.Side
 	(Direction)(0),         // 1: marketdata.v1.Direction
@@ -1186,18 +1701,24 @@ var file_marketdata_v1_events_proto_goTypes = []any{
 	(*BookLevel)(nil),      // 9: marketdata.v1.BookLevel
 	(*Book)(nil),           // 10: marketdata.v1.Book
 	(*Gap)(nil),            // 11: marketdata.v1.Gap
+	(*ArbVenue)(nil),       // 12: marketdata.v1.ArbVenue
+	(*ArbRoute)(nil),       // 13: marketdata.v1.ArbRoute
+	(*ArbSnapshot)(nil),    // 14: marketdata.v1.ArbSnapshot
+	(*ArbWindow)(nil),      // 15: marketdata.v1.ArbWindow
 }
 var file_marketdata_v1_events_proto_depIdxs = []int32{
-	0, // 0: marketdata.v1.Trade.taker_side:type_name -> marketdata.v1.Side
-	1, // 1: marketdata.v1.AlertRule.direction:type_name -> marketdata.v1.Direction
-	2, // 2: marketdata.v1.Alert.type:type_name -> marketdata.v1.AlertType
-	9, // 3: marketdata.v1.Book.bids:type_name -> marketdata.v1.BookLevel
-	9, // 4: marketdata.v1.Book.asks:type_name -> marketdata.v1.BookLevel
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	0,  // 0: marketdata.v1.Trade.taker_side:type_name -> marketdata.v1.Side
+	1,  // 1: marketdata.v1.AlertRule.direction:type_name -> marketdata.v1.Direction
+	2,  // 2: marketdata.v1.Alert.type:type_name -> marketdata.v1.AlertType
+	9,  // 3: marketdata.v1.Book.bids:type_name -> marketdata.v1.BookLevel
+	9,  // 4: marketdata.v1.Book.asks:type_name -> marketdata.v1.BookLevel
+	12, // 5: marketdata.v1.ArbSnapshot.venues:type_name -> marketdata.v1.ArbVenue
+	13, // 6: marketdata.v1.ArbSnapshot.routes:type_name -> marketdata.v1.ArbRoute
+	7,  // [7:7] is the sub-list for method output_type
+	7,  // [7:7] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_marketdata_v1_events_proto_init() }
@@ -1211,7 +1732,7 @@ func file_marketdata_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_marketdata_v1_events_proto_rawDesc), len(file_marketdata_v1_events_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   9,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

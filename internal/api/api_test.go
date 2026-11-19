@@ -226,6 +226,16 @@ func (f *fakeHistory) RecentTrades(context.Context, string, string, int) ([]stor
 
 func (f *fakeHistory) RecentAlerts(context.Context, int) ([]store.AlertRow, error) { return nil, nil }
 
+func (f *fakeHistory) ArbWindows(_ context.Context, asset string, limit int) ([]store.ArbWindowRow, error) {
+	f.gotArg = asset + "|" + itoa(limit)
+	return nil, nil
+}
+
+func (f *fakeHistory) ArbStats(_ context.Context, asset string, since time.Time) ([]store.ArbRouteStats, error) {
+	f.gotArg = asset + "|" + time.Since(since).Round(time.Hour).String()
+	return nil, nil
+}
+
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 
 func server(t *testing.T, h History, frontend fstest.MapFS) (*httptest.Server, *httptest.Server) {
@@ -288,6 +298,22 @@ func TestEmptyResultIsArray(t *testing.T) {
 	s, _ := server(t, &fakeHistory{}, nil)
 	if _, body := get(t, s.URL+"/api/alerts"); strings.TrimSpace(body) != "[]" {
 		t.Errorf("body = %q, want []", body)
+	}
+}
+
+func TestArbEndpoints(t *testing.T) {
+	h := &fakeHistory{}
+	s, _ := server(t, h, nil)
+	if code, body := get(t, s.URL+"/api/arb/windows?asset=BTC-USD&limit=10"); code != 200 || strings.TrimSpace(body) != "[]" || h.gotArg != "BTC-USD|10" {
+		t.Errorf("windows -> %d %q (%s)", code, body, h.gotArg)
+	}
+	if code, _ := get(t, s.URL+"/api/arb/stats?asset=ETH-USD&window=1h"); code != 200 || h.gotArg != "ETH-USD|1h0m0s" {
+		t.Errorf("stats -> %d (%s)", code, h.gotArg)
+	}
+	for _, bad := range []string{"/api/arb/windows", "/api/arb/windows?asset=BTC", "/api/arb/stats?asset=BTC-USD&window=-1h"} {
+		if code, _ := get(t, s.URL+bad); code != 400 {
+			t.Errorf("%s -> %d, want 400", bad, code)
+		}
 	}
 }
 

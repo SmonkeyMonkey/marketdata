@@ -74,6 +74,24 @@ ClickHouse, real-time analytics, alerts and a websocket gateway.
       (update id or exchange time) so the two ingester replicas never interleave; per-second spread
       and imbalance go to ClickHouse (`book_stats`). Verified live: best bid/ask equal each
       exchange's REST ticker, 0 checksum mismatches.
+- [x] Stage 8 — cross-exchange arbitrage (`arbitrage` service): markets of one asset are compared
+      across exchanges in a common quote (BTC-USD, BTC-USDT and BTC-USDC are all BTC-USD; USDT and
+      USDC are converted at the live mid of Kraken USDT-USD / USDC-USD, assumed 1:1 only while that
+      book is stale). For every ordered pair of venues it computes the top-of-book edge before and
+      after both taker fees, and the size that stays profitable when walking both books level by
+      level. A route profitable after fees opens a window; when it closes, duration, peak edge, size
+      and profit go to `md.arb-windows` → ClickHouse (`arb_windows`), with an alert once per window
+      above `ARB_ALERT_BPS`. Books older than `ARB_MAX_BOOK_AGE` and crossed books are left out, so a
+      dead feed cannot fake an opportunity. Live comparisons go to the gateway (`arb:<asset>`, ~4/s)
+      and the UI (venue table, buy × sell matrix, 24h history per route). ≈6 µs to evaluate one book
+      against three venues × 50 levels. Live result: after USDT conversion the three exchanges agree
+      within ~1 bp on BTC/ETH/SOL, so with lowest-tier taker fees (10–60 bp a side) every route is
+      ~50–100 bp negative — the numbers show why retail cross-exchange arbitrage on liquid pairs
+      doesn't exist.
+- [x] Consumers survive a recreated topic: fetch errors are logged at most every 5 s, and errors
+      that don't stop for a minute (e.g. `UNKNOWN_TOPIC_ID` after a topic is recreated, which
+      franz-go retries in a tight loop forever) end the process so the restart policy brings it
+      back with a fresh client.
 - [ ] Stage 3b — Bybit, OKX, Coinbase Advanced
 
 ### Rule index benchmark (one trade checked against n rules of its symbol, Apple M-series core)
@@ -166,18 +184,18 @@ internal/config         env configuration
   Prometheus), both replicas stalled and `make audit` shows the hole. In production the replicas
   belong on different hosts/zones.
 - The rules and subscriptions APIs have no authentication (demo).
+- Arbitrage runs as one instance; a window open during its restart is lost (window IDs derive
+  from the book that opened them, so a second replica would produce the same rows). Taker fees
+  are static config, not each account's tier, and transfers between exchanges (withdrawal fees,
+  confirmation time) are not modelled — the edge is what simultaneous trades on pre-funded
+  accounts would get.
+- The Docker Desktop VM has 4 GB: `make up` builds images one at a time, because parallel Go
+  builds next to Kafka and ClickHouse got the brokers OOM-killed.
 
 ## TODO
 
-- [ ] **Data retention (ClickHouse TTL).** Tables currently grow without limit; unsubscribing a
-      pair only stops new data, history stays. Add per-table TTLs via a migration, configurable
-      by env, e.g.:
-      - `trades`, 1s `candles`: 30 days
-      - 1m `candles`: 1 year
-      - `alerts`, `gaps`: 90 days
-
-      ClickHouse drops expired data by whole partitions during merges (`ttl_only_drop_parts`),
-      which is cheap. Kafka already has retention (7 days trades, 30 days candles).
+- [x] Data retention (ClickHouse TTL, `005_ttl.sql`): trades and 1s candles 30 days, 1m candles
+      1 year, alerts and gaps 90 days, book stats 30 days, arbitrage windows 90 days.
 - [ ] Show history of unsubscribed pairs in the UI (it stays in ClickHouse and is served by
       `/api/candles`, but the market list only shows current subscriptions).
 

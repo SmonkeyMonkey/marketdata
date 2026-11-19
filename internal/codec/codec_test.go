@@ -92,3 +92,40 @@ func TestDecodeRejectsGarbage(t *testing.T) {
 		t.Fatal("want error")
 	}
 }
+
+func TestArbRoundTrip(t *testing.T) {
+	at := time.Unix(1_800_000_000, 123_000_000).UTC()
+	dec := decimal.RequireFromString
+	snap := model.ArbSnapshot{Asset: "BTC-USD", Time: at,
+		Venues: []model.ArbVenue{{Exchange: "binance", Symbol: "BTC-USDT", Bid: dec("64000.1"), Ask: dec("64000.2"),
+			BidSize: dec("1.5"), AskSize: dec("0.2"), Rate: dec("0.9991"), RateSource: "kraken:USDT-USD", FeeBps: dec("10"), BookTime: at}},
+		Routes: []model.ArbRoute{{BuyExchange: "kraken", BuySymbol: "BTC-USD", SellExchange: "binance", SellSymbol: "BTC-USDT",
+			BuyPrice: dec("63990"), SellPrice: dec("64000.1"), GrossBps: dec("1.58"), NetBps: dec("-48.42"), Size: dec("0"), Profit: dec("0")}}}
+	b, err := EncodeArbSnapshot(snap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := DecodeArbSnapshot(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Asset != snap.Asset || !got.Time.Equal(at) || len(got.Venues) != 1 || len(got.Routes) != 1 ||
+		!got.Venues[0].Rate.Equal(dec("0.9991")) || got.Venues[0].RateSource != "kraken:USDT-USD" || !got.Routes[0].NetBps.Equal(dec("-48.42")) {
+		t.Errorf("snapshot round trip: %+v", got)
+	}
+
+	w := model.ArbWindow{ID: "w1", Asset: "BTC-USD", BuyExchange: "kraken", BuySymbol: "BTC-USD", SellExchange: "binance", SellSymbol: "BTC-USDT",
+		Opened: at, Closed: at.Add(350 * time.Millisecond), PeakNetBps: dec("3.2"), PeakGrossBps: dec("53.2"),
+		PeakSize: dec("0.4"), PeakProfit: dec("8.19"), Updates: 4}
+	b, _ = EncodeArbWindow(w)
+	gw, err := DecodeArbWindow(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gw.ID != w.ID || gw.Duration() != 350*time.Millisecond || !gw.PeakProfit.Equal(w.PeakProfit) || gw.Updates != 4 {
+		t.Errorf("window round trip: %+v", gw)
+	}
+	if _, err := DecodeArbWindow([]byte{0x4a, 0x01, 'x'}); err == nil { // peak_net_bps = "x"
+		t.Error("bad decimal accepted")
+	}
+}

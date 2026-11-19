@@ -47,8 +47,14 @@ run-ingester: build
 run-writer: build
 	./bin/writer
 
+# Services built from this repo (ingester-b shares ingester-a's image).
+BUILT := ingester-a writer aggregator alerts arbitrage gateway api
+
+# Images are built one at a time: in parallel, seven Go builds plus Kafka and
+# ClickHouse don't fit a 4 GB Docker VM and the OOM killer takes the brokers.
 up:
-	docker compose up -d --build --remove-orphans
+	@for s in $(BUILT); do docker compose build -q $$s || exit 1; done
+	docker compose up -d --remove-orphans
 
 down:
 	docker compose down
@@ -96,4 +102,5 @@ LOAD_TRADES_SHARE ?= 0.1
 LOAD_DURATION ?= 2m
 load:
 	LOAD_CONNS=$(LOAD_CONNS) LOAD_RATE=$(LOAD_RATE) LOAD_TRADES_SHARE=$(LOAD_TRADES_SHARE) LOAD_DURATION=$(LOAD_DURATION) \
-		docker compose --profile load up --build --no-deps --scale loadgen=$(LOAD_REPLICAS) loadgen
+		docker compose --profile load up --build --no-deps --scale loadgen=$(LOAD_REPLICAS) loadgen; \
+		docker compose --profile load rm -sf loadgen # don't leave it for "docker compose start" to revive

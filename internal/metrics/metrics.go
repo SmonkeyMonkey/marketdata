@@ -6,6 +6,7 @@ package metrics
 
 import (
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -417,4 +418,84 @@ func NewHTTP(reg prometheus.Registerer) *HTTP {
 
 func (h *HTTP) Observe(route string, code int, d time.Duration) {
 	h.duration.WithLabelValues(route, strconv.Itoa(code)).Observe(d.Seconds())
+}
+
+type Arbitrage struct {
+	books    prometheus.Counter
+	eval     prometheus.Histogram
+	windows  *prometheus.CounterVec
+	duration prometheus.Histogram
+	netBps   *prometheus.GaugeVec
+	bestNet  *prometheus.GaugeVec
+	rate     *prometheus.GaugeVec
+	alerts   prometheus.Counter
+}
+
+func NewArbitrage(reg prometheus.Registerer) *Arbitrage {
+	f := promauto.With(reg)
+	return &Arbitrage{
+		books: f.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "arb", Name: "books_total",
+			Help: "Book snapshots evaluated (copies from redundant ingesters excluded).",
+		}),
+		eval: f.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace, Subsystem: "arb", Name: "evaluation_seconds",
+			Help:    "Time to compare one book against the other venues of its asset.",
+			Buckets: prometheus.ExponentialBuckets(0.000_001, 2, 16), // 1us .. ~33ms
+		}),
+		windows: f.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "arb", Name: "windows_total",
+			Help: "Closed opportunity windows, by asset.",
+		}, []string{"asset"}),
+		duration: f.NewHistogram(prometheus.HistogramOpts{
+			Namespace: namespace, Subsystem: "arb", Name: "window_duration_seconds",
+			Help:    "How long opportunities stay open.",
+			Buckets: prometheus.ExponentialBuckets(0.05, 2, 12), // 50ms .. ~100s
+		}),
+		netBps: f.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "arb", Name: "route_net_bps",
+			Help: "Top-of-book edge after taker fees per route (negative: no opportunity).",
+		}, []string{"asset", "buy", "sell"}),
+		bestNet: f.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "arb", Name: "best_net_bps",
+			Help: "Best route edge after fees per asset.",
+		}, []string{"asset"}),
+		rate: f.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: namespace, Subsystem: "arb", Name: "quote_rate",
+			Help: "Conversion rate of a quote to its common quote (1 when pegged).",
+		}, []string{"quote", "source"}),
+		alerts: f.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "arb", Name: "alerts_total",
+			Help: "Arbitrage alerts published.",
+		}),
+	}
+}
+
+func (a *Arbitrage) Evaluated(d time.Duration) { a.books.Inc(); a.eval.Observe(d.Seconds()) }
+func (a *Arbitrage) Alert()                    { a.alerts.Inc() }
+
+func (a *Arbitrage) Window(asset string, d time.Duration) {
+	a.windows.WithLabelValues(asset).Inc()
+	a.duration.Observe(d.Seconds())
+}
+
+// Snapshot records the latest edges of an asset. Routes that disappear
+// (stale venue) are removed, so a dead feed does not leave a frozen value.
+func (a *Arbitrage) Snapshot(s model.ArbSnapshot) {
+	a.netBps.DeletePartialMatch(prometheus.Labels{"asset": s.Asset})
+	if len(s.Routes) == 0 {
+		a.bestNet.DeleteLabelValues(s.Asset)
+	} else {
+		a.bestNet.WithLabelValues(s.Asset).Set(s.Routes[0].NetBps.InexactFloat64())
+	}
+	for _, r := range s.Routes {
+		a.netBps.WithLabelValues(s.Asset, r.BuyExchange+":"+r.BuySymbol, r.SellExchange+":"+r.SellSymbol).Set(r.NetBps.InexactFloat64())
+	}
+	for _, v := range s.Venues {
+		if v.RateSource != "1" {
+			_, quote, _ := strings.Cut(v.Symbol, "-")
+			a.rate.DeletePartialMatch(prometheus.Labels{"quote": quote})
+			a.rate.WithLabelValues(quote, v.RateSource).Set(v.Rate.InexactFloat64())
+		}
+	}
 }

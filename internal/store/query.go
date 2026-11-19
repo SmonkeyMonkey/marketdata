@@ -130,6 +130,64 @@ func (c *ClickHouse) RecentAlerts(ctx context.Context, limit int) ([]AlertRow, e
 	return out, nil
 }
 
+type ArbWindowRow struct {
+	ID           string          `ch:"id" json:"id"`
+	Asset        string          `ch:"asset" json:"asset"`
+	Buy          string          `ch:"buy" json:"buy"`   // exchange:symbol
+	Sell         string          `ch:"sell" json:"sell"` // exchange:symbol
+	Opened       time.Time       `ch:"opened" json:"opened"`
+	Closed       time.Time       `ch:"closed" json:"closed"`
+	DurationMs   uint64          `ch:"duration_ms" json:"duration_ms"`
+	PeakNetBps   float64         `ch:"peak_net_bps" json:"peak_net_bps"`
+	PeakGrossBps float64         `ch:"peak_gross_bps" json:"peak_gross_bps"`
+	PeakSize     decimal.Decimal `ch:"peak_size" json:"peak_size"`
+	PeakProfit   decimal.Decimal `ch:"peak_profit" json:"peak_profit"`
+}
+
+// ArbRouteStats summarises the windows of one route over a period.
+type ArbRouteStats struct {
+	Buy           string          `ch:"buy" json:"buy"`
+	Sell          string          `ch:"sell" json:"sell"`
+	Windows       uint64          `ch:"windows" json:"windows"`
+	TotalMs       uint64          `ch:"total_ms" json:"total_ms"` // time the route was open
+	MedianMs      float64         `ch:"median_ms" json:"median_ms"`
+	MaxNetBps     float64         `ch:"max_net_bps" json:"max_net_bps"`
+	SumPeakProfit decimal.Decimal `ch:"sum_peak_profit" json:"sum_peak_profit"`
+}
+
+// ArbWindows returns the latest closed windows of an asset, newest first.
+func (c *ClickHouse) ArbWindows(ctx context.Context, asset string, limit int) ([]ArbWindowRow, error) {
+	var out []ArbWindowRow
+	err := c.conn.Select(ctx, &out, `
+		SELECT id, asset, buy_exchange || ':' || buy_symbol AS buy, sell_exchange || ':' || sell_symbol AS sell,
+		       opened, closed, duration_ms, peak_net_bps, peak_gross_bps, peak_size, peak_profit
+		FROM arb_windows FINAL
+		WHERE asset = ? AND opened > now() - INTERVAL 7 DAY
+		ORDER BY opened DESC
+		LIMIT ?`, asset, limit)
+	if err != nil {
+		return nil, fmt.Errorf("arb windows: %w", err)
+	}
+	return out, nil
+}
+
+// ArbStats aggregates an asset's windows per route since a moment.
+func (c *ClickHouse) ArbStats(ctx context.Context, asset string, since time.Time) ([]ArbRouteStats, error) {
+	var out []ArbRouteStats
+	err := c.conn.Select(ctx, &out, `
+		SELECT buy_exchange || ':' || buy_symbol AS buy, sell_exchange || ':' || sell_symbol AS sell,
+		       count() AS windows, sum(duration_ms) AS total_ms, quantile(0.5)(duration_ms) AS median_ms,
+		       max(peak_net_bps) AS max_net_bps, sum(peak_profit) AS sum_peak_profit
+		FROM arb_windows FINAL
+		WHERE asset = ? AND opened >= ?
+		GROUP BY buy, sell
+		ORDER BY windows DESC`, asset, since)
+	if err != nil {
+		return nil, fmt.Errorf("arb stats: %w", err)
+	}
+	return out, nil
+}
+
 // VWAP is quote volume / base volume, rounded to 8 decimals (0 without volume).
 func VWAP(quoteVolume, volume decimal.Decimal) decimal.Decimal {
 	if volume.IsZero() {

@@ -16,6 +16,7 @@ import (
 	"marketdata/internal/codec"
 	"marketdata/internal/config"
 	"marketdata/internal/dedup"
+	"marketdata/internal/fetcherr"
 	"marketdata/internal/metrics"
 	"marketdata/internal/model"
 )
@@ -146,16 +147,19 @@ func (s *Service) Bootstrap(ctx context.Context) error {
 }
 
 // FollowRules applies rule changes until ctx ends. Run after Bootstrap.
-func (s *Service) FollowRules(ctx context.Context) {
+func (s *Service) FollowRules(ctx context.Context) error {
+	fetchErrs := fetcherr.New(s.log, time.Minute)
 	for ctx.Err() == nil {
 		fetches := s.rules.PollFetches(ctx)
-		fetches.EachError(func(t string, p int32, err error) {
-			if ctx.Err() == nil {
-				s.log.Error("rules fetch error", "partition", p, "err", err)
-			}
-		})
+		if ctx.Err() != nil {
+			break
+		}
+		if err := fetchErrs.Check(fetches); err != nil {
+			return fmt.Errorf("rules: %w", err)
+		}
 		fetches.EachRecord(s.applyRule)
 	}
+	return nil
 }
 
 func (s *Service) applyRule(r *kgo.Record) {
@@ -178,6 +182,7 @@ func (s *Service) applyRule(r *kgo.Record) {
 // Run evaluates trades until ctx ends.
 func (s *Service) Run(ctx context.Context) error {
 	lastCommit := time.Now()
+	fetchErrs := fetcherr.New(s.log, time.Minute)
 	for {
 		pollCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
 		fetches := s.trades.PollRecords(pollCtx, 10_000)
@@ -185,11 +190,9 @@ func (s *Service) Run(ctx context.Context) error {
 		if fetches.IsClientClosed() {
 			return errors.New("kafka client closed")
 		}
-		fetches.EachError(func(t string, p int32, err error) {
-			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-				s.log.Error("trades fetch error", "partition", p, "err", err)
-			}
-		})
+		if err := fetchErrs.Check(fetches); err != nil {
+			return fmt.Errorf("trades: %w", err)
+		}
 		fetches.EachRecord(s.evaluate)
 
 		var err error

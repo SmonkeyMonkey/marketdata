@@ -1,4 +1,4 @@
-import type { AlertRow, CandleRow, Instrument, Market, Period, Rule, Settings, TradeRow } from '../types'
+import type { AlertRow, ArbRouteStats, ArbWindowRow, CandleRow, Instrument, Market, Period, Rule, Settings, TradeRow } from '../types'
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -38,6 +38,8 @@ export const api = {
     fetch(`/api/candles?${q({ exchange: m.exchange, symbol: m.symbol, period, limit })}`).then(json<CandleRow[]>),
   trades: (m: Market, limit = 50) =>
     fetch(`/api/trades?${q({ exchange: m.exchange, symbol: m.symbol, limit })}`).then(json<TradeRow[]>),
+  arbWindows: (asset: string, limit = 20) => fetch(`/api/arb/windows?${q({ asset, limit })}`).then(json<ArbWindowRow[]>),
+  arbStats: (asset: string, window = '24h') => fetch(`/api/arb/stats?${q({ asset, window })}`).then(json<ArbRouteStats[]>),
   alerts: (limit = 30) => fetch(`/api/alerts?${q({ limit })}`).then(json<AlertRow[]>),
   createRule: (r: { exchange: string; symbol: string; direction: 'above' | 'below'; price: string; note?: string }) =>
     fetch('/api/rules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(r) }).then(json<Rule>),

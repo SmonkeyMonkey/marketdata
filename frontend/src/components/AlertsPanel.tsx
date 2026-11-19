@@ -4,7 +4,7 @@ import { fmtTime } from '../lib/format'
 import { useChannels } from '../lib/hooks'
 import { channels, type AlertRow, type Market } from '../types'
 
-const LABEL = { price_rule: 'rule', whale_trade: 'whale', price_move: 'move' } as const
+const LABEL = { price_rule: 'rule', whale_trade: 'whale', price_move: 'move', arbitrage: 'arb' } as const
 
 export function AlertsPanel({ markets }: { markets: Market[] }) {
   const [alerts, setAlerts] = useState<AlertRow[]>([])

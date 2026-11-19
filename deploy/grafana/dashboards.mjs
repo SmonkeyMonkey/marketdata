@@ -162,6 +162,23 @@ ts(8, 8, 'Book resyncs (checksum mismatches)', [['sum by (exchange) (increase(md
 ts(16, 8, 'Book frames sent to clients / s', [['sum(rate(md_gateway_published_total{type="book"}[$__rate_interval]))', 'published']], { unit: 'ops' });
 y += 8;
 
+// --- arbitrage
+row('Arbitrage');
+ts(0, 8, 'Best edge after fees per asset (bps; < 0: no opportunity)', [['md_arb_best_net_bps', '{{asset}}']]);
+ts(8, 8, 'Opportunities closed / min', [['sum by (asset) (increase(md_arb_windows_total[1m]))', '{{asset}}']]);
+ts(16, 8, 'Opportunity duration', [
+  [q(0.5, 'md_arb_window_duration_seconds'), 'p50'],
+  [q(0.99, 'md_arb_window_duration_seconds'), 'p99'],
+], { unit: 's' });
+y += 8;
+ts(0, 8, 'Edge after fees per route (bps)', [['md_arb_route_net_bps{asset="BTC-USD"}', '{{buy}} → {{sell}}']]);
+ts(8, 8, 'Quote rates (USDT, USDC in USD)', [['md_arb_quote_rate', '{{quote}} ({{source}})']]);
+ts(16, 8, 'Evaluation time per book', [
+  [q(0.5, 'md_arb_evaluation_seconds'), 'p50'],
+  [q(0.99, 'md_arb_evaluation_seconds'), 'p99'],
+], { unit: 's' });
+y += 8;
+
 // --- alerts
 row('Alerts');
 ts(0, 8, 'Alerts fired / min', [['sum by (type) (increase(md_alerts_fired_total[1m]))', '{{type}}']]);
@@ -174,9 +191,9 @@ y += 8;
 
 // --- runtime
 row('Runtime');
-ts(0, 8, 'CPU', [['rate(process_cpu_seconds_total{job=~"ingester|writer|aggregator|gateway|alerts"}[$__rate_interval])', '{{instance}}']], { unit: 'percentunit' });
-ts(8, 8, 'Heap in use', [['go_memstats_heap_inuse_bytes{job=~"ingester|writer|aggregator|gateway|alerts"}', '{{instance}}']], { unit: 'bytes' });
-ts(16, 8, 'Goroutines', [['go_goroutines{job=~"ingester|writer|aggregator|gateway|alerts"}', '{{instance}}']]);
+ts(0, 8, 'CPU', [['rate(process_cpu_seconds_total{job=~"ingester|writer|aggregator|gateway|alerts|arbitrage"}[$__rate_interval])', '{{instance}}']], { unit: 'percentunit' });
+ts(8, 8, 'Heap in use', [['go_memstats_heap_inuse_bytes{job=~"ingester|writer|aggregator|gateway|alerts|arbitrage"}', '{{instance}}']], { unit: 'bytes' });
+ts(16, 8, 'Goroutines', [['go_goroutines{job=~"ingester|writer|aggregator|gateway|alerts|arbitrage"}', '{{instance}}']]);
 y += 8;
 
 const dashboard = {

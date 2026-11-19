@@ -5,13 +5,12 @@ import { quoteOf, whaleFor, type Market, type Settings } from '../types'
 /**
  * The selected market's whale threshold: trade notional (price × size) in
  * its quote currency, so XRP-BTC is set in BTC. Used by the alerts service
- * and the trade tape highlight. The default lives in the Settings dialog.
+ * and the trade tape highlight.
  */
-export function WhaleSettings({ market, settings, onSaved, onOpenSettings }: {
+export function WhaleSettings({ market, settings, onSaved }: {
   market: Market
   settings: Settings | null
   onSaved: (s: Settings) => void
-  onOpenSettings: () => void
 }) {
   const own = settings?.markets.find((x) => x.exchange === market.exchange && x.symbol === market.symbol)
   const current = whaleFor(settings, market) ?? ''
@@ -49,7 +48,7 @@ export function WhaleSettings({ market, settings, onSaved, onOpenSettings }: {
   const quote = quoteOf(market.symbol)
   return (
     <div className="whale-settings">
-      <h3>Whale trades</h3>
+      <h3>{market.exchange} {market.symbol}</h3>
       <form onSubmit={save}>
         <label>{market.symbol} ≥</label>
         <input inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} />
@@ -59,7 +58,7 @@ export function WhaleSettings({ market, settings, onSaved, onOpenSettings }: {
       <p className="muted hint">
         {own
           ? <>own threshold · <button className="link" onClick={reset}>use default ({settings?.default_whale})</button></>
-          : <>default for all markets · <button className="link" onClick={onOpenSettings}>change default</button></>}
+          : <>uses the default for all markets (below)</>}
         {current === '0' && ' · whale alerts off'}
       </p>
       {error && <p className="error">{error}</p>}

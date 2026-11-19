@@ -20,6 +20,7 @@ import (
 	"marketdata/internal/codec"
 	"marketdata/internal/config"
 	"marketdata/internal/dedup"
+	"marketdata/internal/fetcherr"
 	"marketdata/internal/metrics"
 	"marketdata/internal/model"
 )
@@ -30,6 +31,7 @@ type Store interface {
 	InsertCandles(ctx context.Context, candles []model.Candle) error
 	InsertAlerts(ctx context.Context, alerts []model.Alert) error
 	InsertBookSamples(ctx context.Context, samples []model.BookSample) error
+	InsertArbWindows(ctx context.Context, windows []model.ArbWindow) error
 }
 
 type Options struct {
@@ -64,6 +66,7 @@ type Writer struct {
 	gaps    []model.Gap
 	candles []model.Candle
 	alerts  []model.Alert
+	arb     []model.ArbWindow
 	// books keeps the latest snapshot stats per market and second: ~10
 	// snapshots a second per market are sampled down to one row.
 	books     map[string]model.BookSample
@@ -87,7 +90,7 @@ func New(store Store, opts Options, log *slog.Logger, kopts ...kgo.Opt) (*Writer
 	if opts.Metrics == nil {
 		opts.Metrics = metrics.NewWriter(prometheus.NewRegistry())
 	}
-	opts.Metrics.Init("trades", "gaps", "candles", "alerts", "book_stats")
+	opts.Metrics.Init("trades", "gaps", "candles", "alerts", "book_stats", "arb_windows")
 	if opts.DedupWindow == 0 {
 		opts.DedupWindow = 20_000
 	}
@@ -117,6 +120,7 @@ func New(store Store, opts Options, log *slog.Logger, kopts ...kgo.Opt) (*Writer
 
 // Run consumes until ctx is cancelled, then flushes what it holds.
 func (w *Writer) Run(ctx context.Context) error {
+	fetchErrs := fetcherr.New(w.log, time.Minute)
 	for {
 		pollCtx, cancel := context.WithTimeout(ctx, w.opts.FlushInterval)
 		fetches := w.client.PollRecords(pollCtx, w.opts.BatchSize)
@@ -128,11 +132,11 @@ func (w *Writer) Run(ctx context.Context) error {
 		if fetches.IsClientClosed() {
 			return errors.New("kafka client closed")
 		}
-		fetches.EachError(func(topic string, p int32, err error) {
-			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-				w.log.Error("kafka fetch error", "topic", topic, "partition", p, "err", err)
-			}
-		})
+		// The pending batch is not committed, so it is read again after the
+		// restart.
+		if err := fetchErrs.Check(fetches); err != nil {
+			return err
+		}
 
 		w.mu.Lock()
 		fetches.EachRecord(w.add)
@@ -199,6 +203,13 @@ func (w *Writer) add(r *kgo.Record) {
 			return
 		}
 		w.alerts = append(w.alerts, a)
+	case w.opts.Kafka.TopicArbWindows:
+		aw, err := codec.DecodeArbWindow(r.Value)
+		if err != nil {
+			w.skip(r, err)
+			return
+		}
+		w.arb = append(w.arb, aw)
 	case w.opts.Kafka.TopicBooks:
 		b, err := codec.DecodeBook(r.Value)
 		if err != nil {
@@ -216,7 +227,7 @@ func (w *Writer) add(r *kgo.Record) {
 
 func consumeTopics(k config.Kafka) []string {
 	topics := []string{k.TopicTrades, k.TopicGaps}
-	for _, t := range []string{k.TopicCandles, k.TopicAlerts, k.TopicBooks} {
+	for _, t := range []string{k.TopicCandles, k.TopicAlerts, k.TopicBooks, k.TopicArbWindows} {
 		if t != "" {
 			topics = append(topics, t)
 		}
@@ -273,7 +284,7 @@ func (w *Writer) flushLocked(ctx context.Context) error {
 	}
 	now := time.Now()
 	w.opts.Metrics.Stored(w.trades, now)
-	w.opts.Metrics.Flushed(map[string]int{"trades": len(w.trades), "gaps": len(w.gaps), "candles": len(w.candles), "alerts": len(w.alerts), "book_stats": len(w.books)}, len(w.records), now.Sub(started))
+	w.opts.Metrics.Flushed(map[string]int{"trades": len(w.trades), "gaps": len(w.gaps), "candles": len(w.candles), "alerts": len(w.alerts), "book_stats": len(w.books), "arb_windows": len(w.arb)}, len(w.records), now.Sub(started))
 	w.log.Debug("flushed", "trades", len(w.trades), "gaps", len(w.gaps))
 	w.reset()
 	return nil
@@ -331,7 +342,10 @@ func (w *Writer) insert(ctx context.Context) error {
 	for _, s := range w.books {
 		samples = append(samples, s)
 	}
-	return w.store.InsertBookSamples(ctx, samples)
+	if err := w.store.InsertBookSamples(ctx, samples); err != nil {
+		return err
+	}
+	return w.store.InsertArbWindows(ctx, w.arb)
 }
 
 func (w *Writer) reset() {
@@ -341,6 +355,7 @@ func (w *Writer) reset() {
 	w.gaps = w.gaps[:0]
 	w.candles = w.candles[:0]
 	w.alerts = w.alerts[:0]
+	w.arb = w.arb[:0]
 	clear(w.books)
 	clear(w.batchIDs)
 }

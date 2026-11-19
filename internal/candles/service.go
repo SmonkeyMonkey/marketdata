@@ -16,6 +16,7 @@ import (
 
 	"marketdata/internal/codec"
 	"marketdata/internal/config"
+	"marketdata/internal/fetcherr"
 	"marketdata/internal/metrics"
 	"marketdata/internal/model"
 )
@@ -76,6 +77,7 @@ func NewService(opts ServiceOptions, log *slog.Logger, kopts ...kgo.Opt) (*Servi
 }
 
 func (s *Service) Run(ctx context.Context) error {
+	fetchErrs := fetcherr.New(s.log, time.Minute)
 	lastCommit := time.Now()
 	for {
 		pollCtx, cancel := context.WithTimeout(ctx, 250*time.Millisecond)
@@ -84,11 +86,9 @@ func (s *Service) Run(ctx context.Context) error {
 		if fetches.IsClientClosed() {
 			return errors.New("kafka client closed")
 		}
-		fetches.EachError(func(topic string, p int32, err error) {
-			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-				s.log.Error("kafka fetch error", "topic", topic, "partition", p, "err", err)
-			}
-		})
+		if err := fetchErrs.Check(fetches); err != nil {
+			return err
+		}
 
 		s.mu.Lock()
 		now := time.Now()

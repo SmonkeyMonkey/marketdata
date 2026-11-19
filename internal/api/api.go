@@ -51,6 +51,8 @@ type History interface {
 	Candles(ctx context.Context, exchange, symbol, base string, bucket, limit int) ([]store.CandleRow, error)
 	RecentTrades(ctx context.Context, exchange, symbol string, limit int) ([]store.TradeRow, error)
 	RecentAlerts(ctx context.Context, limit int) ([]store.AlertRow, error)
+	ArbWindows(ctx context.Context, asset string, limit int) ([]store.ArbWindowRow, error)
+	ArbStats(ctx context.Context, asset string, since time.Time) ([]store.ArbRouteStats, error)
 }
 
 type Options struct {
@@ -84,6 +86,8 @@ func Handler(o Options) http.Handler {
 	route("GET /api/candles", h.candles)
 	route("GET /api/trades", h.trades)
 	route("GET /api/alerts", h.alerts)
+	route("GET /api/arb/windows", h.arbWindows)
+	route("GET /api/arb/stats", h.arbStats)
 
 	// /api/rules... -> alerts service /v1/rules...
 	rules := httputil.NewSingleHostReverseProxy(o.Alerts)
@@ -331,6 +335,44 @@ func (h *handler) trades(w http.ResponseWriter, r *http.Request) {
 func (h *handler) alerts(w http.ResponseWriter, r *http.Request) {
 	out, err := h.o.History.RecentAlerts(r.Context(), limit(r.URL.Query(), 50, 500))
 	reply(h, w, out, err)
+}
+
+// arbWindows lists closed opportunities: ?asset=BTC-USD&limit=50.
+func (h *handler) arbWindows(w http.ResponseWriter, r *http.Request) {
+	asset, ok := assetParam(w, r)
+	if !ok {
+		return
+	}
+	out, err := h.o.History.ArbWindows(r.Context(), asset, limit(r.URL.Query(), 50, 500))
+	reply(h, w, out, err)
+}
+
+// arbStats summarises opportunities per route: ?asset=BTC-USD&window=24h.
+func (h *handler) arbStats(w http.ResponseWriter, r *http.Request) {
+	asset, ok := assetParam(w, r)
+	if !ok {
+		return
+	}
+	window := 24 * time.Hour
+	if v := r.URL.Query().Get("window"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 || d > 90*24*time.Hour {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "window: a duration up to 2160h"})
+			return
+		}
+		window = d
+	}
+	out, err := h.o.History.ArbStats(r.Context(), asset, time.Now().Add(-window))
+	reply(h, w, out, err)
+}
+
+func assetParam(w http.ResponseWriter, r *http.Request) (string, bool) {
+	a := r.URL.Query().Get("asset")
+	if base, quote, ok := strings.Cut(a, "-"); !ok || base == "" || quote == "" || len(a) > 32 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "asset: want BASE-QUOTE, e.g. BTC-USD"})
+		return "", false
+	}
+	return a, true
 }
 
 // reply writes a list; an empty result is [] rather than null. (A nil slice

@@ -42,6 +42,10 @@ type Kafka struct {
 	TopicSettings string
 	// TopicBooks carries order book snapshots (short retention).
 	TopicBooks string
+	// TopicArb carries cross-exchange comparisons (short retention);
+	// TopicArbWindows the closed arbitrage opportunities.
+	TopicArb        string
+	TopicArbWindows string
 }
 
 type Aggregator struct {
@@ -265,6 +269,8 @@ func (e *env) kafka() Kafka {
 		TopicSubscriptions: e.str("KAFKA_TOPIC_SUBSCRIPTIONS", "md.subscriptions"),
 		TopicSettings:      e.str("KAFKA_TOPIC_SETTINGS", "md.settings"),
 		TopicBooks:         e.str("KAFKA_TOPIC_BOOKS", "md.books"),
+		TopicArb:           e.str("KAFKA_TOPIC_ARB", "md.arb"),
+		TopicArbWindows:    e.str("KAFKA_TOPIC_ARB_WINDOWS", "md.arb-windows"),
 	}
 	if len(k.Brokers) == 0 {
 		e.fail("KAFKA_BROKERS must not be empty")
@@ -462,4 +468,42 @@ func (e *env) url(key, def string) *url.URL {
 		u, _ = url.Parse(def)
 	}
 	return u
+}
+
+type Arbitrage struct {
+	Log         Log
+	MetricsAddr string
+	Kafka       Kafka
+	// Quotes: quote -> common quote it is compared in (USDT:USD).
+	Quotes []string
+	// FX: quote -> market whose mid converts it (USDT:kraken:USDT-USD).
+	FX []string
+	// TakerFees: exchange:bps.
+	TakerFees     []string
+	MinNetBps     decimal.Decimal
+	AlertBps      decimal.Decimal
+	AlertCooldown time.Duration
+	MaxBookAge    time.Duration
+	PublishEvery  time.Duration
+	Tick          time.Duration
+}
+
+func LoadArbitrage() (Arbitrage, error) {
+	e := &env{}
+	c := Arbitrage{
+		Log:         e.log(),
+		MetricsAddr: e.str("ARB_METRICS_ADDR", ":9107"),
+		Kafka:       e.kafka(),
+		Quotes:      e.list("ARB_QUOTES", []string{"USDT:USD", "USDC:USD"}),
+		FX:          e.list("ARB_FX", []string{"USDT:kraken:USDT-USD", "USDC:kraken:USDC-USD"}),
+		// Lowest-tier taker fees; check the current fee schedules.
+		TakerFees:     e.list("ARB_TAKER_FEES_BPS", []string{"coinbase:60", "binance:10", "kraken:40"}),
+		MinNetBps:     e.decimal("ARB_MIN_NET_BPS", "0"),
+		AlertBps:      e.decimal("ARB_ALERT_BPS", "10"),
+		AlertCooldown: e.duration("ARB_ALERT_COOLDOWN", time.Minute),
+		MaxBookAge:    e.duration("ARB_MAX_BOOK_AGE", 5*time.Second),
+		PublishEvery:  e.duration("ARB_PUBLISH_EVERY", 250*time.Millisecond),
+		Tick:          e.duration("ARB_TICK", 500*time.Millisecond),
+	}
+	return c, e.err()
 }

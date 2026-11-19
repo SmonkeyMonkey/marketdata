@@ -188,6 +188,7 @@ const (
 	AlertPriceRule
 	AlertWhaleTrade
 	AlertPriceMove
+	AlertArbitrage
 )
 
 func (t AlertType) String() string {
@@ -198,6 +199,8 @@ func (t AlertType) String() string {
 		return "whale_trade"
 	case AlertPriceMove:
 		return "price_move"
+	case AlertArbitrage:
+		return "arbitrage"
 	default:
 		return "unknown"
 	}
