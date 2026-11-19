@@ -113,6 +113,24 @@ message MarketSettings {
   int64 updated_unix_nano = 4;
 }
 
+message BookLevel {
+  string price = 1;
+  string size = 2;
+}
+
+// Book is a snapshot of the top of one market's L2 order book, best levels
+// first. Published at most every ~100 ms per market.
+message Book {
+  string exchange = 1;
+  string symbol = 2;
+  repeated BookLevel bids = 3;
+  repeated BookLevel asks = 4;
+  int64 exchange_time_unix_nano = 5;
+  int64 receive_time_unix_nano = 6;
+  // Exchange update id when available (Binance), for ordering; 0 otherwise.
+  int64 seq = 7;
+}
+
 // Gap reports trades missed between two observed trade IDs.
 message Gap {
   string exchange = 1;

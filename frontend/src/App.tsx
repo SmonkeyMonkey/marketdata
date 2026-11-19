@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertsPanel } from './components/AlertsPanel'
 import { MarketsBoard } from './components/MarketsBoard'
+import { OrderBook } from './components/OrderBook'
 import { PriceChart } from './components/PriceChart'
 import { RulesPanel } from './components/RulesPanel'
 import { TradeTape } from './components/TradeTape'
@@ -78,6 +79,7 @@ export function App() {
       {market && (
         <main>
           <PriceChart market={market} period={period} />
+          <OrderBook market={market} />
           <TradeTape market={market} whale={Number(whaleFor(settings, market) ?? 0) || null} />
           <MarketsBoard markets={markets} selected={market} onSelect={setMarket} onChanged={loadMarkets} />
           <AlertsPanel markets={markets} />

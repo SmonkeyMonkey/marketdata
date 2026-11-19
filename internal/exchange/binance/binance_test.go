@@ -44,7 +44,7 @@ func trades(t *testing.T, f *Feed, b []byte) []model.Event {
 }
 
 func TestURLSelectsTradeStreams(t *testing.T) {
-	want := baseURL + "?streams=btcusdt@trade/ethusdt@trade"
+	want := baseURL + "?streams=btcusdt@trade/btcusdt@depth20@100ms/ethusdt@trade/ethusdt@depth20@100ms"
 	if got := newFeed(t).URL(); got != want {
 		t.Errorf("URL = %s, want %s", got, want)
 	}
@@ -128,14 +128,14 @@ func TestSetSymbolsOnLiveConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		`{"id":1,"method":"SUBSCRIBE","params":["solusdt@trade"]}`,
-		`{"id":2,"method":"UNSUBSCRIBE","params":["ethusdt@trade"]}`,
+		`{"id":1,"method":"SUBSCRIBE","params":["solusdt@trade","solusdt@depth20@100ms"]}`,
+		`{"id":2,"method":"UNSUBSCRIBE","params":["ethusdt@trade","ethusdt@depth20@100ms"]}`,
 	}
 	if len(frames) != 2 || string(frames[0]) != want[0] || string(frames[1]) != want[1] {
 		t.Errorf("frames = %s", frames)
 	}
 	// A reconnect starts with the new set.
-	if got := f.URL(); got != baseURL+"?streams=btcusdt@trade/solusdt@trade" {
+	if got := f.URL(); got != baseURL+"?streams=btcusdt@trade/btcusdt@depth20@100ms/solusdt@trade/solusdt@depth20@100ms" {
 		t.Errorf("URL = %s", got)
 	}
 	if frames, _ := f.SetSymbols([]string{"BTC-USDT", "SOL-USDT"}); len(frames) != 0 {
@@ -154,5 +154,19 @@ func TestSubscribeErrorDoesNotEndSession(t *testing.T) {
 func TestNonTradeFramesAreIgnored(t *testing.T) {
 	if ev := trades(t, newFeed(t), []byte(`{"result":null,"id":1}`)); len(ev) != 0 {
 		t.Errorf("got %d events", len(ev))
+	}
+}
+
+func TestDepthSnapshotBecomesBook(t *testing.T) {
+	ev := trades(t, newFeed(t), frame(t, "depth20.json"))
+	if len(ev) != 1 {
+		t.Fatalf("got %d events", len(ev))
+	}
+	b := ev[0].(model.Book)
+	if b.Exchange != "binance" || b.Symbol != "BTC-USDT" || b.Seq != 103182541822 || len(b.Bids) != 5 || len(b.Asks) != 5 {
+		t.Fatalf("book = %+v", b)
+	}
+	if b.Bids[0].Price.String() != "63853.45" || !b.Bids[0].Price.LessThan(b.Asks[0].Price) {
+		t.Errorf("best bid/ask = %s/%s", b.Bids[0].Price, b.Asks[0].Price)
 	}
 }

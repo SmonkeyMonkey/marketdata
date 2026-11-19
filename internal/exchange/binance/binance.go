@@ -19,6 +19,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"marketdata/internal/book"
 	"marketdata/internal/exchange"
 	"marketdata/internal/model"
 )
@@ -34,6 +35,7 @@ type Feed struct {
 	canonical map[string]string // BTCUSDT -> BTC-USDT
 	ids       *exchange.TradeIDs
 	reqID     int
+	books     *book.Tracker
 }
 
 var (
@@ -50,7 +52,7 @@ func New(baseURL string, symbols []string) (*Feed, error) {
 	if err != nil {
 		return nil, fmt.Errorf("binance: url: %w", err)
 	}
-	f := &Feed{base: u, canonical: map[string]string{}, ids: exchange.NewTradeIDs(Name)}
+	f := &Feed{base: u, canonical: map[string]string{}, ids: exchange.NewTradeIDs(Name), books: book.NewTracker(Name)}
 	if _, err := f.SetSymbols(symbols); err != nil {
 		return nil, err
 	}
@@ -66,7 +68,14 @@ func native(symbol string) (string, error) {
 	return base + quote, nil
 }
 
-func stream(native string) string { return strings.ToLower(native) + "@trade" }
+// Per symbol: individual trades, and the top 20 book levels every 100 ms
+// (a full partial snapshot each time: no local diff sync needed).
+const depthSuffix = "@depth20@100ms"
+
+func streams(native string) []string {
+	n := strings.ToLower(native)
+	return []string{n + "@trade", n + depthSuffix}
+}
 
 func (f *Feed) Name() string { return Name }
 
@@ -74,15 +83,15 @@ func (f *Feed) Name() string { return Name }
 func (f *Feed) URL() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	streams := make([]string, 0, len(f.symbols))
+	all := make([]string, 0, 2*len(f.symbols))
 	for _, s := range f.symbols {
 		n, _ := native(s) // validated in SetSymbols
-		streams = append(streams, stream(n))
+		all = append(all, streams(n)...)
 	}
 	u := *f.base
 	// Stream names are [a-z0-9@_], safe in a query without escaping; Binance
 	// documents them unescaped.
-	u.RawQuery = "streams=" + strings.Join(streams, "/")
+	u.RawQuery = "streams=" + strings.Join(all, "/")
 	return u.String()
 }
 
@@ -108,15 +117,16 @@ func (f *Feed) SetSymbols(symbols []string) ([][]byte, error) {
 		if len(op.symbols) == 0 {
 			continue
 		}
-		params := make([]string, len(op.symbols))
-		for i, s := range op.symbols {
+		params := make([]string, 0, 2*len(op.symbols))
+		for _, s := range op.symbols {
 			n, _ := native(s)
-			params[i] = stream(n)
+			params = append(params, streams(n)...)
 			if op.method == "SUBSCRIBE" {
 				f.canonical[n] = s
 			} else {
 				delete(f.canonical, n)
 				f.ids.Forget(s)
+				f.books.Forget(s)
 			}
 		}
 		f.reqID++
@@ -130,8 +140,8 @@ func (f *Feed) SetSymbols(symbols []string) ([][]byte, error) {
 }
 
 type envelope struct {
-	Stream string `json:"stream"`
-	Data   trade  `json:"data"`
+	Stream string          `json:"stream"`
+	Data   json.RawMessage `json:"data"`
 	// Replies to SUBSCRIBE/UNSUBSCRIBE.
 	ID    int `json:"id"`
 	Error *struct {
@@ -162,12 +172,18 @@ func (f *Feed) Handle(frame []byte, received time.Time, dst []model.Event) ([]mo
 	if env.Error != nil {
 		return dst, &exchange.SymbolError{Symbol: fmt.Sprintf("request %d", env.ID), Reason: env.Error.Msg}
 	}
-	if env.Data.EventType != "trade" {
-		return dst, nil
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	t := env.Data
+	if prefix, ok := strings.CutSuffix(env.Stream, depthSuffix); ok {
+		return f.handleDepth(strings.ToUpper(prefix), env.Data, received, dst)
+	}
+	if !strings.HasSuffix(env.Stream, "@trade") {
+		return dst, nil
+	}
+	var t trade
+	if err := json.Unmarshal(env.Data, &t); err != nil {
+		return dst, fmt.Errorf("binance: decode trade: %w", err)
+	}
 	symbol, ok := f.canonical[t.Symbol]
 	if !ok {
 		return dst, nil // in flight when we unsubscribed
@@ -194,4 +210,32 @@ func (f *Feed) Handle(frame []byte, received time.Time, dst []model.Event) ([]mo
 		ExchangeTime: time.UnixMilli(t.TradeTime).UTC(),
 		ReceiveTime:  received,
 	}), nil
+}
+
+// handleDepth applies a depth20 partial snapshot: the whole top of the
+// book, so the local book is replaced each time. lastUpdateId orders them.
+func (f *Feed) handleDepth(native string, data []byte, received time.Time, dst []model.Event) ([]model.Event, error) {
+	symbol, ok := f.canonical[native]
+	if !ok {
+		return dst, nil // in flight when we unsubscribed
+	}
+	var d struct {
+		LastUpdateID int64                `json:"lastUpdateId"`
+		Bids         [][2]decimal.Decimal `json:"bids"`
+		Asks         [][2]decimal.Decimal `json:"asks"`
+	}
+	if err := json.Unmarshal(data, &d); err != nil {
+		return dst, fmt.Errorf("binance: decode depth: %w", err)
+	}
+	f.books.Reset(symbol)
+	b := f.books.Book(symbol)
+	for _, l := range d.Bids {
+		b.SetBid(l[0], l[1])
+	}
+	for _, l := range d.Asks {
+		b.SetAsk(l[0], l[1])
+	}
+	f.books.Snapshot(symbol)
+	// The partial depth stream has no event time; receipt time stands in.
+	return f.books.Changed(symbol, received, received, d.LastUpdateID, dst), nil
 }

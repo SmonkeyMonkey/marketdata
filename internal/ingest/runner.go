@@ -180,14 +180,24 @@ func (r *Runner) session(ctx context.Context, log *slog.Logger) (err error) {
 		if err != nil {
 			return err
 		}
+		if ob, ok := r.Feed.(exchange.Outbox); ok {
+			for _, f := range ob.Outbox() {
+				if err := conn.Write(ctx, websocket.MessageText, f); err != nil {
+					return fmt.Errorf("send: %w", err)
+				}
+			}
+		}
 		if len(events) == 0 {
 			continue
 		}
 		r.Metrics.Events(events)
 		for i, e := range events {
-			if g, ok := e.(model.Gap); ok {
-				g.Source = r.Source
-				events[i] = g
+			switch ev := e.(type) {
+			case model.Gap:
+				ev.Source = r.Source
+				events[i] = ev
+			case model.BookResync:
+				log.Warn("order book resync", "symbol", ev.Symbol, "reason", ev.Reason)
 			}
 		}
 		if err := r.Publisher.Publish(ctx, events); err != nil {

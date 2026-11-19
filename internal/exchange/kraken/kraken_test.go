@@ -57,12 +57,17 @@ func TestSubscriptions(t *testing.T) {
 			Snapshot bool     `json:"snapshot"`
 		} `json:"params"`
 	}
-	if err := json.Unmarshal(subs[0], &got); err != nil {
+	// instrument (precision for book checksums), trade, book.
+	if len(subs) != 3 || !strings.Contains(string(subs[0]), `"channel":"instrument"`) ||
+		!strings.Contains(string(subs[2]), `"channel":"book","depth":100`) {
+		t.Fatalf("subscriptions = %s", subs)
+	}
+	if err := json.Unmarshal(subs[1], &got); err != nil {
 		t.Fatal(err)
 	}
 	if got.Method != "subscribe" || got.Params.Channel != "trade" || !got.Params.Snapshot ||
 		strings.Join(got.Params.Symbol, ",") != "BTC/USD,ETH/USD" {
-		t.Errorf("subscription = %s", subs[0])
+		t.Errorf("trade subscription = %s", subs[1])
 	}
 }
 
@@ -153,14 +158,124 @@ func TestSetSymbols(t *testing.T) {
 	}
 	want := []string{
 		`{"method":"subscribe","params":{"channel":"trade","snapshot":true,"symbol":["DOGE/USD"]}}`,
+		`{"method":"subscribe","params":{"channel":"book","depth":100,"symbol":["DOGE/USD"]}}`,
 		`{"method":"unsubscribe","params":{"channel":"trade","symbol":["ETH/USD"]}}`,
+		`{"method":"unsubscribe","params":{"channel":"book","depth":100,"symbol":["ETH/USD"]}}`,
 	}
-	if len(frames) != 2 || string(frames[0]) != want[0] || string(frames[1]) != want[1] {
-		t.Errorf("frames = %s", frames)
+	if len(frames) != len(want) {
+		t.Fatalf("frames = %s", frames)
+	}
+	for i := range want {
+		if string(frames[i]) != want[i] {
+			t.Errorf("frame %d = %s, want %s", i, frames[i], want[i])
+		}
 	}
 	// ETH trades still in flight are dropped.
 	eth := []byte(strings.ReplaceAll(string(frame(t, "update.json")), "BTC/USD", "ETH/USD"))
 	if ev := handle(t, f, eth); len(ev) != 0 {
 		t.Errorf("unsubscribed ETH produced %d events", len(ev))
+	}
+}
+
+// BTC/USD precision as sent by the instrument channel.
+var instrument = []byte(`{"channel":"instrument","type":"snapshot","data":{"assets":[],"pairs":[{"symbol":"BTC/USD","price_precision":1,"qty_precision":8}]}}`)
+
+func bookFrames(t *testing.T) (snapshot []byte, updates [][]byte) {
+	t.Helper()
+	for _, l := range strings.Split(strings.TrimSpace(string(frame(t, "book_updates.json"))), "\n") {
+		updates = append(updates, []byte(l))
+	}
+	return frame(t, "book_snapshot.json"), updates
+}
+
+func books(ev []model.Event) (out []model.Book, resyncs int) {
+	for _, e := range ev {
+		switch b := e.(type) {
+		case model.Book:
+			out = append(out, b)
+		case model.BookResync:
+			resyncs++
+		}
+	}
+	return out, resyncs
+}
+
+// Real frames with Kraken's checksums: every one must verify.
+func TestBookChecksumsVerifyOnRealFrames(t *testing.T) {
+	f := newFeed(t)
+	handle(t, f, instrument)
+	snap, updates := bookFrames(t)
+	ev := handle(t, f, snap)
+	for _, u := range updates {
+		ev = append(ev, handle(t, f, u)...)
+	}
+	bs, resyncs := books(ev)
+	if resyncs != 0 {
+		t.Fatalf("%d checksum mismatches on real frames", resyncs)
+	}
+	if len(bs) == 0 {
+		t.Fatal("no book published")
+	}
+	b := bs[0]
+	if b.Symbol != "BTC-USD" || len(b.Bids) != 50 || len(b.Asks) != 50 || !b.Bids[0].Price.LessThan(b.Asks[0].Price) {
+		t.Errorf("book: %s %d bids %d asks, best %s/%s", b.Symbol, len(b.Bids), len(b.Asks), b.Bids[0].Price, b.Asks[0].Price)
+	}
+}
+
+// A book that diverged from the exchange is detected, not published, and
+// resubscribed; updates are ignored until the new snapshot.
+func TestBookChecksumMismatchResyncs(t *testing.T) {
+	f := newFeed(t)
+	handle(t, f, instrument)
+	snap, updates := bookFrames(t)
+	// Corrupt one top-10 quantity, as if an update had been lost.
+	var m map[string]any
+	_ = json.Unmarshal(snap, &m)
+	m["data"].([]any)[0].(map[string]any)["bids"].([]any)[0].(map[string]any)["qty"] = 123.0
+	bad, _ := json.Marshal(m)
+
+	bs, resyncs := books(handle(t, f, bad))
+	if resyncs != 1 || len(bs) != 0 {
+		t.Fatalf("corrupt snapshot: %d books, %d resyncs", len(bs), resyncs)
+	}
+	out := f.Outbox()
+	if len(out) != 2 || !strings.Contains(string(out[0]), "unsubscribe") || !strings.Contains(string(out[1]), `"method":"subscribe"`) {
+		t.Fatalf("outbox = %s", out)
+	}
+	if bs, _ := books(handle(t, f, updates[0])); len(bs) != 0 {
+		t.Error("update applied before the fresh snapshot")
+	}
+	if bs, resyncs := books(handle(t, f, snap)); len(bs) != 1 || resyncs != 0 {
+		t.Errorf("fresh snapshot: %d books, %d resyncs", len(bs), resyncs)
+	}
+}
+
+// A checksum that keeps failing must not turn into a resubscribe flood.
+func TestBookResyncsAreRateLimited(t *testing.T) {
+	f := newFeed(t)
+	handle(t, f, instrument)
+	snap, _ := bookFrames(t)
+	var m map[string]any
+	_ = json.Unmarshal(snap, &m)
+	m["data"].([]any)[0].(map[string]any)["bids"].([]any)[0].(map[string]any)["qty"] = 123.0
+	bad, _ := json.Marshal(m)
+
+	t0 := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	sent := 0
+	for i := range 100 { // a bad snapshot every 100 ms for 10 s
+		if _, err := f.Handle(bad, t0.Add(time.Duration(i)*100*time.Millisecond), nil); err != nil {
+			t.Fatal(err)
+		}
+		sent += len(f.Outbox())
+	}
+	if sent != 2 {
+		t.Errorf("sent %d frames in 10 s, want one unsubscribe+subscribe", sent)
+	}
+	// After the window the pending resync goes out, on any frame.
+	if _, err := f.Handle(frame(t, "heartbeat.json"), t0.Add(31*time.Second), nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(f.Outbox()); n != 2 {
+		t.Errorf("pending resync after the window: %d frames, want 2", n)
 	}
 }

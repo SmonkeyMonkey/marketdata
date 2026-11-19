@@ -252,3 +252,78 @@ func (s MarketSettings) Key() string {
 	}
 	return s.Exchange + ":" + s.Symbol
 }
+
+// BookLevel is the total size resting at one price.
+type BookLevel struct {
+	Price decimal.Decimal `json:"price"`
+	Size  decimal.Decimal `json:"size"`
+}
+
+// Book is a snapshot of the top of one market's L2 order book.
+type Book struct {
+	Exchange     string      `json:"exchange"`
+	Symbol       string      `json:"symbol"`
+	Bids         []BookLevel `json:"bids"` // best (highest) first
+	Asks         []BookLevel `json:"asks"` // best (lowest) first
+	ExchangeTime time.Time   `json:"exchange_time"`
+	ReceiveTime  time.Time   `json:"receive_time"`
+	// Seq orders snapshots of one market when the exchange provides an
+	// update id (Binance); 0 otherwise.
+	Seq int64 `json:"seq,omitempty"`
+}
+
+func (Book) Kind() string { return "book" }
+func (Book) event()       {}
+
+// BookStats summarises a book snapshot.
+type BookStats struct {
+	BestBid, BestAsk, Mid, Spread decimal.Decimal
+	SpreadBps                     decimal.Decimal // spread / mid * 10^4
+	BidSize, AskSize              decimal.Decimal // over the top N levels
+	// Imbalance in [-1, 1]: (bid size - ask size) / (bid size + ask size)
+	// over the top N levels; positive = more resting buy interest.
+	Imbalance decimal.Decimal
+}
+
+// Stats computes spread and imbalance over the top n levels. ok is false
+// when a side is empty.
+func (b Book) Stats(n int) (s BookStats, ok bool) {
+	if len(b.Bids) == 0 || len(b.Asks) == 0 {
+		return s, false
+	}
+	s.BestBid, s.BestAsk = b.Bids[0].Price, b.Asks[0].Price
+	s.Mid = s.BestBid.Add(s.BestAsk).Div(decimal.NewFromInt(2))
+	s.Spread = s.BestAsk.Sub(s.BestBid)
+	if !s.Mid.IsZero() {
+		s.SpreadBps = s.Spread.Div(s.Mid).Mul(decimal.NewFromInt(10_000)).Round(4) // BTC: ~0.0016 bps
+	}
+	for i := 0; i < n && i < len(b.Bids); i++ {
+		s.BidSize = s.BidSize.Add(b.Bids[i].Size)
+	}
+	for i := 0; i < n && i < len(b.Asks); i++ {
+		s.AskSize = s.AskSize.Add(b.Asks[i].Size)
+	}
+	if total := s.BidSize.Add(s.AskSize); !total.IsZero() {
+		s.Imbalance = s.BidSize.Sub(s.AskSize).Div(total).Round(4)
+	}
+	return s, true
+}
+
+// BookSample is one market's book stats at one second (stored for history).
+type BookSample struct {
+	Exchange string
+	Symbol   string
+	Time     time.Time // truncated to the second
+	Stats    BookStats
+}
+
+// BookResync reports that a local book diverged from the exchange (e.g. a
+// checksum mismatch) and was rebuilt. Counted in metrics, not published.
+type BookResync struct {
+	Exchange string `json:"exchange"`
+	Symbol   string `json:"symbol"`
+	Reason   string `json:"reason"`
+}
+
+func (BookResync) Kind() string { return "book_resync" }
+func (BookResync) event()       {}

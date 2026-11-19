@@ -67,6 +67,18 @@ export interface AlertMsg {
   change_pct?: Decimal
 }
 
+export interface BookMsg {
+  exchange: string
+  symbol: string
+  bids: [Decimal, Decimal][] // [price, size], best first
+  asks: [Decimal, Decimal][]
+  time: string
+  mid: Decimal
+  spread: Decimal
+  spread_bps: Decimal
+  imbalance: Decimal // -1..1 over the top 10 levels; > 0: more bid size
+}
+
 interface Envelope<T extends string, D> {
   type: T
   channel: string
@@ -78,6 +90,7 @@ export type ServerMessage =
   | Envelope<'trade', TradeMsg>
   | Envelope<'candle', CandleMsg>
   | Envelope<'alert', AlertMsg>
+  | Envelope<'book', BookMsg>
   | { type: 'subscribed' | 'unsubscribed'; ts: number; channels: string[] }
   | { type: 'error'; ts: number; error: string }
   | { type: 'pong'; ts: number }
@@ -124,4 +137,5 @@ export const channels = {
   trades: (m: Market) => `trades:${m.exchange}:${m.symbol}`,
   candles: (m: Market, p: BasePeriod) => `candles:${m.exchange}:${m.symbol}:${p}`,
   alerts: (m: Market) => `alerts:${m.exchange}:${m.symbol}`,
+  book: (m: Market) => `book:${m.exchange}:${m.symbol}`,
 }

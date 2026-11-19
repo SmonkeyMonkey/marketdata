@@ -29,6 +29,7 @@ type Store interface {
 	InsertGaps(ctx context.Context, gaps []model.Gap) error
 	InsertCandles(ctx context.Context, candles []model.Candle) error
 	InsertAlerts(ctx context.Context, alerts []model.Alert) error
+	InsertBookSamples(ctx context.Context, samples []model.BookSample) error
 }
 
 type Options struct {
@@ -57,12 +58,15 @@ type Writer struct {
 
 	// mu guards the pending batch: the poll loop and the partition-revoke
 	// callback (called from a client goroutine) both flush it.
-	mu        sync.Mutex
-	records   []*kgo.Record
-	trades    []model.Trade
-	gaps      []model.Gap
-	candles   []model.Candle
-	alerts    []model.Alert
+	mu      sync.Mutex
+	records []*kgo.Record
+	trades  []model.Trade
+	gaps    []model.Gap
+	candles []model.Candle
+	alerts  []model.Alert
+	// books keeps the latest snapshot stats per market and second: ~10
+	// snapshots a second per market are sampled down to one row.
+	books     map[string]model.BookSample
 	lastFlush time.Time
 
 	// stored holds IDs that are already in storage; batchIDs holds IDs in
@@ -83,13 +87,14 @@ func New(store Store, opts Options, log *slog.Logger, kopts ...kgo.Opt) (*Writer
 	if opts.Metrics == nil {
 		opts.Metrics = metrics.NewWriter(prometheus.NewRegistry())
 	}
-	opts.Metrics.Init("trades", "gaps", "candles", "alerts")
+	opts.Metrics.Init("trades", "gaps", "candles", "alerts", "book_stats")
 	if opts.DedupWindow == 0 {
 		opts.DedupWindow = 20_000
 	}
 	w := &Writer{
 		store: store, opts: opts, log: log, lastFlush: time.Now(),
 		stored:   dedup.NewWindow(opts.DedupWindow),
+		books:    map[string]model.BookSample{},
 		batchIDs: make(map[string]struct{}),
 	}
 	kopts = append([]kgo.Opt{
@@ -194,12 +199,24 @@ func (w *Writer) add(r *kgo.Record) {
 			return
 		}
 		w.alerts = append(w.alerts, a)
+	case w.opts.Kafka.TopicBooks:
+		b, err := codec.DecodeBook(r.Value)
+		if err != nil {
+			w.skip(r, err)
+			return
+		}
+		stats, ok := b.Stats(10)
+		if !ok {
+			return
+		}
+		sec := b.ExchangeTime.Truncate(time.Second)
+		w.books[b.Exchange+"|"+b.Symbol+"|"+sec.String()] = model.BookSample{Exchange: b.Exchange, Symbol: b.Symbol, Time: sec, Stats: stats}
 	}
 }
 
 func consumeTopics(k config.Kafka) []string {
 	topics := []string{k.TopicTrades, k.TopicGaps}
-	for _, t := range []string{k.TopicCandles, k.TopicAlerts} {
+	for _, t := range []string{k.TopicCandles, k.TopicAlerts, k.TopicBooks} {
 		if t != "" {
 			topics = append(topics, t)
 		}
@@ -256,7 +273,7 @@ func (w *Writer) flushLocked(ctx context.Context) error {
 	}
 	now := time.Now()
 	w.opts.Metrics.Stored(w.trades, now)
-	w.opts.Metrics.Flushed(map[string]int{"trades": len(w.trades), "gaps": len(w.gaps), "candles": len(w.candles), "alerts": len(w.alerts)}, len(w.records), now.Sub(started))
+	w.opts.Metrics.Flushed(map[string]int{"trades": len(w.trades), "gaps": len(w.gaps), "candles": len(w.candles), "alerts": len(w.alerts), "book_stats": len(w.books)}, len(w.records), now.Sub(started))
 	w.log.Debug("flushed", "trades", len(w.trades), "gaps", len(w.gaps))
 	w.reset()
 	return nil
@@ -307,7 +324,14 @@ func (w *Writer) insert(ctx context.Context) error {
 	if err := w.store.InsertCandles(ctx, w.candles); err != nil {
 		return err
 	}
-	return w.store.InsertAlerts(ctx, w.alerts)
+	if err := w.store.InsertAlerts(ctx, w.alerts); err != nil {
+		return err
+	}
+	samples := make([]model.BookSample, 0, len(w.books))
+	for _, s := range w.books {
+		samples = append(samples, s)
+	}
+	return w.store.InsertBookSamples(ctx, samples)
 }
 
 func (w *Writer) reset() {
@@ -317,6 +341,7 @@ func (w *Writer) reset() {
 	w.gaps = w.gaps[:0]
 	w.candles = w.candles[:0]
 	w.alerts = w.alerts[:0]
+	clear(w.books)
 	clear(w.batchIDs)
 }
 

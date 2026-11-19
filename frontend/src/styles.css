@@ -25,9 +25,9 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 .status.reconnecting, .status.connecting { color: var(--warn); }
 main {
   flex: 1; min-height: 0; display: grid; gap: 8px; padding: 8px;
-  grid-template-columns: 1fr 1fr 1fr 320px;
+  grid-template-columns: 1fr 1fr 1fr 290px 300px;
   grid-template-rows: 1fr 260px;
-  grid-template-areas: "chart chart chart tape" "markets alerts rules tape";
+  grid-template-areas: "chart chart chart book tape" "markets alerts rules book tape";
 }
 .chart { grid-area: chart; position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .chart-canvas { position: absolute; inset: 0; }
@@ -101,7 +101,22 @@ button:disabled { opacity: .5; cursor: default; }
 .modal form { align-items: center; }
 .modal label { white-space: nowrap; color: var(--muted); }
 .modal td.actions { white-space: nowrap; }
+.book { grid-area: book; display: flex; flex-direction: column; }
+.book-row { position: relative; display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 4px; padding: 1px 4px; font-variant-numeric: tabular-nums; }
+.book-row.head { padding-bottom: 4px; }
+.book-row .depth { position: absolute; right: 0; top: 1px; bottom: 1px; opacity: .14; pointer-events: none; }
+.book-row.ask .depth { background: var(--down); }
+.book-row.bid .depth { background: var(--up); }
+.book-row.ask .px { color: var(--down); }
+.book-row.bid .px { color: var(--up); }
+.book-row > span { position: relative; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.book-mid { display: flex; gap: 8px; align-items: baseline; padding: 4px; margin: 2px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.book-mid .num { font-size: 14px; }
+.book-mid .muted { font-size: 11px; }
+.imbalance { position: relative; height: 16px; margin-top: auto; background: #ef535033; border-radius: 3px; overflow: hidden; }
+.imbalance .bid-share { position: absolute; left: 0; top: 0; bottom: 0; background: #26a69a55; }
+.imbalance label { position: relative; display: block; text-align: center; font-size: 10px; line-height: 16px; }
 @media (max-width: 900px) {
-  main { grid-template-columns: 1fr; grid-template-rows: 380px auto; grid-template-areas: "chart" "tape" "markets" "alerts" "rules"; }
+  main { grid-template-columns: 1fr; grid-template-rows: 380px auto; grid-template-areas: "chart" "book" "tape" "markets" "alerts" "rules"; }
   .tape { max-height: 300px; }
 }

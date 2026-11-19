@@ -25,6 +25,8 @@ type Ingest struct {
 	feedLatency *prometheus.HistogramVec
 	connected   *prometheus.GaugeVec
 	disconnects *prometheus.CounterVec
+	books       *prometheus.CounterVec
+	resyncs     *prometheus.CounterVec
 }
 
 func NewIngest(reg prometheus.Registerer) *Ingest {
@@ -63,6 +65,14 @@ func NewIngest(reg prometheus.Registerer) *Ingest {
 			Namespace: namespace, Subsystem: "ingest", Name: "disconnects_total",
 			Help: "Websocket sessions that ended and triggered a reconnect.",
 		}, []string{"exchange"}),
+		books: f.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "ingest", Name: "book_snapshots_total",
+			Help: "Order book snapshots published (rate-limited per market).",
+		}, []string{"exchange"}),
+		resyncs: f.NewCounterVec(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "ingest", Name: "book_resyncs_total",
+			Help: "Order books rebuilt after diverging from the exchange (checksum mismatch).",
+		}, []string{"exchange"}),
 	}
 }
 
@@ -70,6 +80,7 @@ func NewIngest(reg prometheus.Registerer) *Ingest {
 // first event instead of starting from it.
 func (m *Ingest) Init(exchange string) {
 	m.disconnects.WithLabelValues(exchange)
+	m.resyncs.WithLabelValues(exchange)
 	m.frames.WithLabelValues(exchange)
 	m.connected.WithLabelValues(exchange)
 }
@@ -90,6 +101,10 @@ func (m *Ingest) Events(events []model.Event) {
 			}
 		case model.Gap:
 			m.missing.WithLabelValues(ev.Exchange, ev.Symbol).Add(float64(ev.Missing))
+		case model.Book:
+			m.books.WithLabelValues(ev.Exchange).Inc()
+		case model.BookResync:
+			m.resyncs.WithLabelValues(ev.Exchange).Inc()
 		}
 	}
 }

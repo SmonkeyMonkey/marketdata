@@ -816,6 +816,153 @@ func (x *MarketSettings) GetUpdatedUnixNano() int64 {
 	return 0
 }
 
+type BookLevel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Price         string                 `protobuf:"bytes,1,opt,name=price,proto3" json:"price,omitempty"`
+	Size          string                 `protobuf:"bytes,2,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BookLevel) Reset() {
+	*x = BookLevel{}
+	mi := &file_marketdata_v1_events_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BookLevel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BookLevel) ProtoMessage() {}
+
+func (x *BookLevel) ProtoReflect() protoreflect.Message {
+	mi := &file_marketdata_v1_events_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BookLevel.ProtoReflect.Descriptor instead.
+func (*BookLevel) Descriptor() ([]byte, []int) {
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *BookLevel) GetPrice() string {
+	if x != nil {
+		return x.Price
+	}
+	return ""
+}
+
+func (x *BookLevel) GetSize() string {
+	if x != nil {
+		return x.Size
+	}
+	return ""
+}
+
+// Book is a snapshot of the top of one market's L2 order book, best levels
+// first. Published at most every ~100 ms per market.
+type Book struct {
+	state                protoimpl.MessageState `protogen:"open.v1"`
+	Exchange             string                 `protobuf:"bytes,1,opt,name=exchange,proto3" json:"exchange,omitempty"`
+	Symbol               string                 `protobuf:"bytes,2,opt,name=symbol,proto3" json:"symbol,omitempty"`
+	Bids                 []*BookLevel           `protobuf:"bytes,3,rep,name=bids,proto3" json:"bids,omitempty"`
+	Asks                 []*BookLevel           `protobuf:"bytes,4,rep,name=asks,proto3" json:"asks,omitempty"`
+	ExchangeTimeUnixNano int64                  `protobuf:"varint,5,opt,name=exchange_time_unix_nano,json=exchangeTimeUnixNano,proto3" json:"exchange_time_unix_nano,omitempty"`
+	ReceiveTimeUnixNano  int64                  `protobuf:"varint,6,opt,name=receive_time_unix_nano,json=receiveTimeUnixNano,proto3" json:"receive_time_unix_nano,omitempty"`
+	// Exchange update id when available (Binance), for ordering; 0 otherwise.
+	Seq           int64 `protobuf:"varint,7,opt,name=seq,proto3" json:"seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Book) Reset() {
+	*x = Book{}
+	mi := &file_marketdata_v1_events_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Book) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Book) ProtoMessage() {}
+
+func (x *Book) ProtoReflect() protoreflect.Message {
+	mi := &file_marketdata_v1_events_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Book.ProtoReflect.Descriptor instead.
+func (*Book) Descriptor() ([]byte, []int) {
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *Book) GetExchange() string {
+	if x != nil {
+		return x.Exchange
+	}
+	return ""
+}
+
+func (x *Book) GetSymbol() string {
+	if x != nil {
+		return x.Symbol
+	}
+	return ""
+}
+
+func (x *Book) GetBids() []*BookLevel {
+	if x != nil {
+		return x.Bids
+	}
+	return nil
+}
+
+func (x *Book) GetAsks() []*BookLevel {
+	if x != nil {
+		return x.Asks
+	}
+	return nil
+}
+
+func (x *Book) GetExchangeTimeUnixNano() int64 {
+	if x != nil {
+		return x.ExchangeTimeUnixNano
+	}
+	return 0
+}
+
+func (x *Book) GetReceiveTimeUnixNano() int64 {
+	if x != nil {
+		return x.ReceiveTimeUnixNano
+	}
+	return 0
+}
+
+func (x *Book) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
 // Gap reports trades missed between two observed trade IDs.
 type Gap struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
@@ -833,7 +980,7 @@ type Gap struct {
 
 func (x *Gap) Reset() {
 	*x = Gap{}
-	mi := &file_marketdata_v1_events_proto_msgTypes[6]
+	mi := &file_marketdata_v1_events_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -845,7 +992,7 @@ func (x *Gap) String() string {
 func (*Gap) ProtoMessage() {}
 
 func (x *Gap) ProtoReflect() protoreflect.Message {
-	mi := &file_marketdata_v1_events_proto_msgTypes[6]
+	mi := &file_marketdata_v1_events_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -858,7 +1005,7 @@ func (x *Gap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Gap.ProtoReflect.Descriptor instead.
 func (*Gap) Descriptor() ([]byte, []int) {
-	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{6}
+	return file_marketdata_v1_events_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Gap) GetExchange() string {
@@ -978,7 +1125,18 @@ const file_marketdata_v1_events_proto_rawDesc = "" +
 	"\bexchange\x18\x01 \x01(\tR\bexchange\x12\x16\n" +
 	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12%\n" +
 	"\x0ewhale_notional\x18\x03 \x01(\tR\rwhaleNotional\x12*\n" +
-	"\x11updated_unix_nano\x18\x04 \x01(\x03R\x0fupdatedUnixNano\"\xd6\x01\n" +
+	"\x11updated_unix_nano\x18\x04 \x01(\x03R\x0fupdatedUnixNano\"5\n" +
+	"\tBookLevel\x12\x14\n" +
+	"\x05price\x18\x01 \x01(\tR\x05price\x12\x12\n" +
+	"\x04size\x18\x02 \x01(\tR\x04size\"\x94\x02\n" +
+	"\x04Book\x12\x1a\n" +
+	"\bexchange\x18\x01 \x01(\tR\bexchange\x12\x16\n" +
+	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12,\n" +
+	"\x04bids\x18\x03 \x03(\v2\x18.marketdata.v1.BookLevelR\x04bids\x12,\n" +
+	"\x04asks\x18\x04 \x03(\v2\x18.marketdata.v1.BookLevelR\x04asks\x125\n" +
+	"\x17exchange_time_unix_nano\x18\x05 \x01(\x03R\x14exchangeTimeUnixNano\x123\n" +
+	"\x16receive_time_unix_nano\x18\x06 \x01(\x03R\x13receiveTimeUnixNano\x12\x10\n" +
+	"\x03seq\x18\a \x01(\x03R\x03seq\"\xd6\x01\n" +
 	"\x03Gap\x12\x1a\n" +
 	"\bexchange\x18\x01 \x01(\tR\bexchange\x12\x16\n" +
 	"\x06symbol\x18\x02 \x01(\tR\x06symbol\x12\x19\n" +
@@ -1014,7 +1172,7 @@ func file_marketdata_v1_events_proto_rawDescGZIP() []byte {
 }
 
 var file_marketdata_v1_events_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_marketdata_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_marketdata_v1_events_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_marketdata_v1_events_proto_goTypes = []any{
 	(Side)(0),              // 0: marketdata.v1.Side
 	(Direction)(0),         // 1: marketdata.v1.Direction
@@ -1025,17 +1183,21 @@ var file_marketdata_v1_events_proto_goTypes = []any{
 	(*Alert)(nil),          // 6: marketdata.v1.Alert
 	(*Subscription)(nil),   // 7: marketdata.v1.Subscription
 	(*MarketSettings)(nil), // 8: marketdata.v1.MarketSettings
-	(*Gap)(nil),            // 9: marketdata.v1.Gap
+	(*BookLevel)(nil),      // 9: marketdata.v1.BookLevel
+	(*Book)(nil),           // 10: marketdata.v1.Book
+	(*Gap)(nil),            // 11: marketdata.v1.Gap
 }
 var file_marketdata_v1_events_proto_depIdxs = []int32{
 	0, // 0: marketdata.v1.Trade.taker_side:type_name -> marketdata.v1.Side
 	1, // 1: marketdata.v1.AlertRule.direction:type_name -> marketdata.v1.Direction
 	2, // 2: marketdata.v1.Alert.type:type_name -> marketdata.v1.AlertType
-	3, // [3:3] is the sub-list for method output_type
-	3, // [3:3] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	9, // 3: marketdata.v1.Book.bids:type_name -> marketdata.v1.BookLevel
+	9, // 4: marketdata.v1.Book.asks:type_name -> marketdata.v1.BookLevel
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_marketdata_v1_events_proto_init() }
@@ -1049,7 +1211,7 @@ func file_marketdata_v1_events_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_marketdata_v1_events_proto_rawDesc), len(file_marketdata_v1_events_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   7,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

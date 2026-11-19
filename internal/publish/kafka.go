@@ -46,6 +46,9 @@ func (k *Kafka) Publish(ctx context.Context, events []model.Event) error {
 		if err != nil {
 			return err
 		}
+		if rec == nil {
+			continue // not published (e.g. book resync notices)
+		}
 		// Records outlive the caller's ctx: a reconnect or shutdown must not
 		// cancel data that is already buffered. Close flushes them.
 		k.client.Produce(context.Background(), rec, k.onDelivered)
@@ -66,6 +69,11 @@ func (k *Kafka) record(e model.Event) (*kgo.Record, error) {
 	case model.Gap:
 		topic, key = k.topics.TopicGaps, ev.Exchange+":"+ev.Symbol
 		value, err = codec.EncodeGap(ev)
+	case model.Book:
+		topic, key = k.topics.TopicBooks, ev.Exchange+":"+ev.Symbol
+		value, err = codec.EncodeBook(ev)
+	case model.BookResync:
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("kafka: unsupported event %T", e)
 	}

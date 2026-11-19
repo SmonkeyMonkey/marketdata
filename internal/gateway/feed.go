@@ -14,6 +14,7 @@ import (
 	"marketdata/internal/config"
 	"marketdata/internal/dedup"
 	"marketdata/internal/metrics"
+	"marketdata/internal/model"
 )
 
 // Feed reads trades and candles from Kafka and publishes them to the hub.
@@ -30,6 +31,34 @@ type Feed struct {
 	log     *slog.Logger
 
 	lastRecord atomic.Int64 // unix nanos of the last record read from Kafka
+
+	// lastBook orders book snapshots per market: both ingesters publish the
+	// same books, and a client must never see an older one after a newer.
+	lastBook map[string]bookMark
+}
+
+type bookMark struct {
+	seq int64
+	at  time.Time
+}
+
+// newer reports whether b is newer than the last snapshot sent for its
+// market: by exchange update id when both have one, else by exchange time.
+func (f *Feed) newer(b model.Book) bool {
+	key := b.Exchange + ":" + b.Symbol
+	prev, ok := f.lastBook[key]
+	isNewer := !ok
+	if ok {
+		if b.Seq > 0 && prev.seq > 0 {
+			isNewer = b.Seq > prev.seq
+		} else {
+			isNewer = b.ExchangeTime.After(prev.at)
+		}
+	}
+	if isNewer {
+		f.lastBook[key] = bookMark{seq: b.Seq, at: b.ExchangeTime}
+	}
+	return isNewer
 }
 
 // Fresh reports an error when nothing was read from Kafka for maxAge: the
@@ -48,14 +77,14 @@ func (f *Feed) Fresh(maxAge time.Duration) error {
 func NewFeed(hub *Hub, k config.Kafka, dedupWindow int, m *metrics.Gateway, log *slog.Logger, opts ...kgo.Opt) (*Feed, error) {
 	opts = append([]kgo.Opt{
 		kgo.SeedBrokers(k.Brokers...),
-		kgo.ConsumeTopics(k.TopicTrades, k.TopicCandles, k.TopicAlerts),
+		kgo.ConsumeTopics(k.TopicTrades, k.TopicCandles, k.TopicAlerts, k.TopicBooks),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
 	}, opts...)
 	cl, err := kgo.NewClient(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("kafka client: %w", err)
 	}
-	return &Feed{cl: cl, hub: hub, topics: k, seen: dedup.NewWindow(dedupWindow), metrics: m, log: log}, nil
+	return &Feed{cl: cl, hub: hub, topics: k, seen: dedup.NewWindow(dedupWindow), metrics: m, log: log, lastBook: map[string]bookMark{}}, nil
 }
 
 func (f *Feed) Close() { f.cl.Close() }
@@ -111,6 +140,17 @@ func (f *Feed) handle(r *kgo.Record) {
 		}
 		kind, channel = "candle", CandlesChannel(c)
 		msg, err = encodeCandle(c, now)
+	case f.topics.TopicBooks:
+		b, derr := codec.DecodeBook(r.Value)
+		if derr != nil {
+			err = derr
+			break
+		}
+		if !f.newer(b) {
+			return // the other ingester's copy, or an older snapshot
+		}
+		kind, channel = "book", BookChannel(b.Exchange, b.Symbol)
+		msg, err = encodeBook(b, now)
 	case f.topics.TopicAlerts:
 		a, derr := codec.DecodeAlert(r.Value)
 		if derr != nil {

@@ -23,7 +23,8 @@ export const fmtPrice = (v: string | number, precision?: number) => {
   return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 }
 
-export const fmtSize = (v: string | number) => Number(v).toLocaleString('en-US', { maximumFractionDigits: 6 })
+// Up to 8 decimals: Kraken sizes such as 0.00000004 must not show as 0.
+export const fmtSize = (v: string | number) => Number(v).toLocaleString('en-US', { maximumFractionDigits: 8 })
 
 // HH:MM:SS.s in local time. Every field must be listed: passing only
 // fractionalSecondDigits makes the browser print just the fraction.

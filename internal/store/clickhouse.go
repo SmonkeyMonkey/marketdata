@@ -110,6 +110,29 @@ func (c *ClickHouse) InsertAlerts(ctx context.Context, alerts []model.Alert) err
 	return nil
 }
 
+func (c *ClickHouse) InsertBookSamples(ctx context.Context, samples []model.BookSample) error {
+	if len(samples) == 0 {
+		return nil
+	}
+	b, err := c.conn.PrepareBatch(ctx, `INSERT INTO book_stats
+		(exchange, symbol, ts, best_bid, best_ask, mid, spread, spread_bps, bid_size10, ask_size10, imbalance)`)
+	if err != nil {
+		return fmt.Errorf("prepare book_stats batch: %w", err)
+	}
+	defer b.Abort()
+	for _, s := range samples {
+		st := s.Stats
+		if err := b.Append(s.Exchange, s.Symbol, s.Time, st.BestBid, st.BestAsk, st.Mid, st.Spread,
+			st.SpreadBps.InexactFloat64(), st.BidSize, st.AskSize, st.Imbalance.InexactFloat64()); err != nil {
+			return fmt.Errorf("append book sample: %w", err)
+		}
+	}
+	if err := b.Send(); err != nil {
+		return fmt.Errorf("send book_stats batch: %w", err)
+	}
+	return nil
+}
+
 func (c *ClickHouse) InsertGaps(ctx context.Context, gaps []model.Gap) error {
 	if len(gaps) == 0 {
 		return nil
