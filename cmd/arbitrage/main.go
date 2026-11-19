@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"marketdata/internal/config"
 	"marketdata/internal/metrics"
 	"marketdata/internal/ops"
+	"marketdata/internal/subs"
 )
 
 func main() {
@@ -37,6 +39,12 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// The rate markets are this service's inputs: pin them, so they are
+	// streamed and cannot be removed from the UI by accident.
+	if err := pinFX(ctx, cfg, engCfg.FX, log); err != nil {
+		return err
+	}
 
 	reg := ops.NewRegistry()
 	svc, err := arb.NewService(arb.NewEngine(engCfg), cfg.Kafka, cfg.Tick, metrics.NewArbitrage(reg), log)
@@ -76,6 +84,24 @@ func engineConfig(c config.Arbitrage) (arb.Config, error) {
 	return arb.Config{
 		Quotes: quotes, FX: fx, FeesBps: fees,
 		MinNetBps: c.MinNetBps, AlertBps: c.AlertBps, AlertCooldown: c.AlertCooldown,
-		MaxBookAge: c.MaxBookAge, PublishEvery: c.PublishEvery,
+		MaxBookAge: c.MaxBookAge, FXMaxAge: c.FXMaxAge, PublishEvery: c.PublishEvery,
 	}, nil
+}
+
+func pinFX(ctx context.Context, cfg config.Arbitrage, fx map[string]string, log *slog.Logger) error {
+	table, err := subs.Open(cfg.Kafka.Brokers, cfg.Kafka.TopicSubscriptions, log)
+	if err != nil {
+		return err
+	}
+	defer table.Close()
+	if err := table.Bootstrap(ctx); err != nil {
+		return fmt.Errorf("load subscriptions: %w", err)
+	}
+	for _, market := range fx {
+		exchange, symbol, _ := strings.Cut(market, ":") // validated in engineConfig
+		if err := table.Pin(ctx, exchange, symbol); err != nil {
+			return err
+		}
+	}
+	return nil
 }

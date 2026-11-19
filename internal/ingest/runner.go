@@ -152,6 +152,12 @@ func (r *Runner) session(ctx context.Context, log *slog.Logger) (err error) {
 			return fmt.Errorf("subscribe: %w", err)
 		}
 	}
+	if p, ok := r.Feed.(exchange.Pinger); ok {
+		pingCtx, stopPing := context.WithCancel(ctx)
+		defer stopPing()
+		frame, every := p.Ping()
+		go keepAlive(pingCtx, conn, frame, every, log)
+	}
 	log.Info("feed connected", "url", r.Feed.URL())
 	r.Metrics.Connected(r.Feed.Name(), true)
 
@@ -202,6 +208,26 @@ func (r *Runner) session(ctx context.Context, log *slog.Logger) (err error) {
 		}
 		if err := r.Publisher.Publish(ctx, events); err != nil {
 			return fmt.Errorf("publish: %w", err)
+		}
+	}
+}
+
+// keepAlive sends an application-level ping until ctx ends. A failed write
+// means the connection is broken; the reader notices and reconnects.
+func keepAlive(ctx context.Context, conn *websocket.Conn, frame []byte, every time.Duration, log *slog.Logger) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			if err := conn.Write(ctx, websocket.MessageText, frame); err != nil {
+				if ctx.Err() == nil {
+					log.Warn("ping failed", "err", err)
+				}
+				return
+			}
 		}
 	}
 }

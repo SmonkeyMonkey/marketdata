@@ -36,8 +36,7 @@ type Feed struct {
 	precision map[string]precision
 	outbox    [][]byte
 	// resync rate limit per native symbol (see handleBook).
-	lastResync    map[string]time.Time
-	pendingResync map[string]bool
+	resyncs *exchange.Resyncs
 }
 
 var (
@@ -58,7 +57,7 @@ func New(url string, symbols []string) (*Feed, error) {
 	return &Feed{
 		url: url, symbols: nat, ids: exchange.NewTradeIDs(Name),
 		books: book.NewTracker(Name), precision: map[string]precision{},
-		lastResync: map[string]time.Time{}, pendingResync: map[string]bool{},
+		resyncs: exchange.NewResyncs(resyncEvery),
 	}, nil
 }
 
@@ -100,6 +99,7 @@ func (f *Feed) SetSymbols(symbols []string) ([][]byte, error) {
 	for _, s := range removed {
 		f.ids.Forget(canonical(s))
 		f.books.Forget(canonical(s))
+		f.resyncs.Forget(s)
 	}
 	return frames, nil
 }

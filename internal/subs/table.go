@@ -6,8 +6,10 @@ package subs
 import (
 	"cmp"
 	"context"
+	"fmt"
 	"log/slog"
 	"slices"
+	"time"
 
 	"github.com/twmb/franz-go/pkg/kgo"
 
@@ -51,6 +53,20 @@ func (t *Table) Symbols(exchange string) []string {
 		}
 	}
 	return out
+}
+
+// Pin makes sure each market is subscribed and pinned, so it cannot be
+// removed from the UI. Idempotent: replicas and restarts write nothing new.
+func (t *Table) Pin(ctx context.Context, exchange string, symbols ...string) error {
+	for _, sym := range symbols {
+		if s, ok := t.Get(exchange, sym); ok && s.Pinned {
+			continue
+		}
+		if err := t.Put(ctx, model.Subscription{Exchange: exchange, Symbol: sym, Pinned: true, CreatedAt: time.Now().UTC()}); err != nil {
+			return fmt.Errorf("pin %s %s: %w", exchange, sym, err)
+		}
+	}
+	return nil
 }
 
 func (t *Table) Get(exchange, symbol string) (model.Subscription, bool) {

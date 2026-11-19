@@ -15,7 +15,7 @@ func TestExchangeDefaults(t *testing.T) {
 	for _, x := range c.Exchanges {
 		names = append(names, x.Name)
 	}
-	if got := strings.Join(names, ","); got != "coinbase,binance,kraken" {
+	if got := strings.Join(names, ","); got != "coinbase,binance,kraken,bybit,okx" {
 		t.Errorf("exchanges = %s", got)
 	}
 }

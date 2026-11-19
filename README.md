@@ -92,7 +92,23 @@ ClickHouse, real-time analytics, alerts and a websocket gateway.
       that don't stop for a minute (e.g. `UNKNOWN_TOPIC_ID` after a topic is recreated, which
       franz-go retries in a tight loop forever) end the process so the restart policy brings it
       back with a fresh client.
-- [ ] Stage 3b — Bybit, OKX, Coinbase Advanced
+- [x] Stage 3b — Bybit (v5 spot) and OKX (v5): trades and L2 books, catalogs for the UI, runtime
+      subscribe/unsubscribe, application pings (both drop quiet connections; a `Pinger` interface
+      lets the runner send them). Findings from live data, each covered by a test on captured frames:
+      - Bybit trade IDs come from counters shared by the markets of one matching shard (the
+        "holes" of ETHUSDC are BTCUSDC's IDs), so they only drop repeats — no gap detection; one bad
+        symbol fails its whole subscribe request, so each symbol gets its own.
+      - OKX `trades` reports one trade per price level of a match: `tradeId` is the last ID and
+        `count` how many it covers, so the gap tracker takes a range (no false gaps).
+      - OKX book checksums are no longer computed (always 0): continuity is checked with
+        `prevSeqId` = last `seqId`; Bybit books with update id `u` +1 per message. A break resets
+        the book and resubscribes it, rate limited per symbol (shared with Kraken now).
+
+      Verified live: best bid/ask match each exchange's REST ticker (8/8 within 2 bp), 0 disconnects
+      and 0 book resyncs over 15 min, pairs added from the UI start streaming without a reconnect.
+      With five venues the arbitrage service compares 20 routes per asset; after USDT conversion
+      all five agree within ~2 bp on BTC.
+- [ ] Stage 3c — Hyperliquid (DEX), Coinbase Advanced Trade (full `level2`)
 
 ### Rule index benchmark (one trade checked against n rules of its symbol, Apple M-series core)
 
@@ -184,6 +200,8 @@ internal/config         env configuration
   Prometheus), both replicas stalled and `make audit` shows the hole. In production the replicas
   belong on different hosts/zones.
 - The rules and subscriptions APIs have no authentication (demo).
+- `make audit` (trade ID holes in storage) covers Coinbase, Binance and Kraken only: Bybit IDs are
+  not sequential per market, and OKX stores one ID per aggregated trade.
 - Arbitrage runs as one instance; a window open during its restart is lost (window IDs derive
   from the book that opened them, so a second replica would produce the same rows). Taker fees
   are static config, not each account's tier, and transfers between exchanges (withdrawal fees,

@@ -20,6 +20,12 @@ type mark struct {
 
 func NewLatest() *Latest { return &Latest{marks: map[string]mark{}} }
 
+// seqRestart: a snapshot this much newer by exchange time is accepted even
+// with a lower update id, because the exchange restarted its sequence
+// (OKX and Bybit do after maintenance). Copies of the same snapshot from
+// the two ingesters are milliseconds apart.
+const seqRestart = 5 * time.Second
+
 // Accept records b and reports true when it is newer: by exchange update id
 // when both snapshots have one, else by exchange time.
 func (l *Latest) Accept(b model.Book) bool {
@@ -28,7 +34,7 @@ func (l *Latest) Accept(b model.Book) bool {
 	newer := !ok
 	if ok {
 		if b.Seq > 0 && prev.seq > 0 {
-			newer = b.Seq > prev.seq
+			newer = b.Seq > prev.seq || b.ExchangeTime.Sub(prev.at) > seqRestart
 		} else {
 			newer = b.ExchangeTime.After(prev.at)
 		}

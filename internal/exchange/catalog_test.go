@@ -9,8 +9,10 @@ import (
 
 	"marketdata/internal/exchange"
 	"marketdata/internal/exchange/binance"
+	"marketdata/internal/exchange/bybit"
 	"marketdata/internal/exchange/coinbase"
 	"marketdata/internal/exchange/kraken"
+	"marketdata/internal/exchange/okx"
 )
 
 // Trimmed real responses (2026-11-18).
@@ -28,6 +30,13 @@ const (
 	 "XDGUSD":{"wsname":"XDG/USD","status":"online"},
 	 "SOLUSD":{"wsname":"SOL/USD","status":"online"},
 	 "FOOUSD":{"wsname":"FOO/USD","status":"cancel_only"}}}`
+	// Trimmed real responses (2026-11-19).
+	bybitInstruments = `{"retCode":0,"retMsg":"OK","result":{"category":"spot","list":[
+	 {"symbol":"BTCUSDT","baseCoin":"BTC","quoteCoin":"USDT","status":"Trading"},
+	 {"symbol":"OLDUSDT","baseCoin":"OLD","quoteCoin":"USDT","status":"Closed"}]}}`
+	okxInstruments = `{"code":"0","msg":"","data":[
+	 {"instId":"BTC-PLN","baseCcy":"BTC","quoteCcy":"PLN","state":"live"},
+	 {"instId":"NEW-USDT","baseCcy":"NEW","quoteCcy":"USDT","state":"preopen"}]}`
 )
 
 func serve(t *testing.T, body string) string {
@@ -60,6 +69,8 @@ func TestCatalogs(t *testing.T) {
 		{"coinbase", func() ([]exchange.Instrument, error) { return coinbase.Catalog(ctx, c, serve(t, coinbaseProducts)) }, []string{"SOL-USD"}},
 		{"binance", func() ([]exchange.Instrument, error) { return binance.Catalog(ctx, c, serve(t, binanceInfo)) }, []string{"1000SATS-USDT", "SOL-USDT"}},
 		{"kraken", func() ([]exchange.Instrument, error) { return kraken.Catalog(ctx, c, serve(t, krakenPairs)) }, []string{"BTC-USD", "DOGE-USD", "SOL-USD"}},
+		{"bybit", func() ([]exchange.Instrument, error) { return bybit.Catalog(ctx, c, serve(t, bybitInstruments)) }, []string{"BTC-USDT"}},
+		{"okx", func() ([]exchange.Instrument, error) { return okx.Catalog(ctx, c, serve(t, okxInstruments)) }, []string{"BTC-PLN"}},
 	} {
 		ins, err := tc.got()
 		if got := symbols(t, ins, err); !slices.Equal(got, tc.want) {

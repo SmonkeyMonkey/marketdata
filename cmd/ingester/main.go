@@ -21,11 +21,12 @@ import (
 	"marketdata/internal/config"
 	"marketdata/internal/exchange"
 	"marketdata/internal/exchange/binance"
+	"marketdata/internal/exchange/bybit"
 	"marketdata/internal/exchange/coinbase"
 	"marketdata/internal/exchange/kraken"
+	"marketdata/internal/exchange/okx"
 	"marketdata/internal/ingest"
 	"marketdata/internal/metrics"
-	"marketdata/internal/model"
 	"marketdata/internal/ops"
 	"marketdata/internal/publish"
 	"marketdata/internal/subs"
@@ -138,14 +139,9 @@ func followSubscriptions(ctx context.Context, cfg config.Ingester, runners []*in
 		return nil, fmt.Errorf("load subscriptions: %w", err)
 	}
 	for _, x := range cfg.Exchanges {
-		for _, sym := range x.Symbols {
-			if s, ok := table.Get(x.Name, sym); ok && s.Pinned {
-				continue
-			}
-			if err := table.Put(ctx, model.Subscription{Exchange: x.Name, Symbol: sym, Pinned: true, CreatedAt: time.Now().UTC()}); err != nil {
-				table.Close()
-				return nil, fmt.Errorf("pin %s %s: %w", x.Name, sym, err)
-			}
+		if err := table.Pin(ctx, x.Name, x.Symbols...); err != nil {
+			table.Close()
+			return nil, err
 		}
 	}
 
@@ -182,6 +178,10 @@ func newFeed(x config.Exchange) (exchange.Feed, error) {
 		return binance.New(x.URL, x.Symbols)
 	case kraken.Name:
 		return kraken.New(x.URL, x.Symbols)
+	case bybit.Name:
+		return bybit.New(x.URL, x.Symbols)
+	case okx.Name:
+		return okx.New(x.URL, x.Symbols)
 	default:
 		return nil, fmt.Errorf("no feed implementation for %q", x.Name)
 	}

@@ -18,8 +18,10 @@ import (
 	"marketdata/internal/config"
 	"marketdata/internal/exchange"
 	"marketdata/internal/exchange/binance"
+	"marketdata/internal/exchange/bybit"
 	"marketdata/internal/exchange/coinbase"
 	"marketdata/internal/exchange/kraken"
+	"marketdata/internal/exchange/okx"
 	"marketdata/internal/metrics"
 	"marketdata/internal/ops"
 	"marketdata/internal/settings"
@@ -72,6 +74,8 @@ func run() error {
 		coinbase.Name: fetcher(coinbase.Catalog, coinbase.CatalogURL),
 		binance.Name:  fetcher(binance.Catalog, binance.CatalogURL),
 		kraken.Name:   fetcher(kraken.Catalog, kraken.CatalogURL),
+		bybit.Name:    fetcher(bybit.Catalog, bybit.CatalogURL),
+		okx.Name:      fetcher(okx.Catalog, okx.CatalogURL),
 	})
 
 	st, err := settings.Open(cfg.Kafka.Brokers, cfg.Kafka.TopicSettings, log)
