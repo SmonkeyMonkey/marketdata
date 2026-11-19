@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import { fmtPrice, fmtSize, fmtTime, pricePrecision } from '../lib/format'
 import { useChannels } from '../lib/hooks'
@@ -8,6 +8,10 @@ import { channels, type Market, type TradeRow } from '../types'
 const ROWS = 60
 // Trades kept per side (see tapeBuffer).
 const KEEP = 300
+// Busy markets trade 100+ times a second; inserting each row on arrival
+// makes the list jump constantly. New trades are added in batches instead
+// (none are dropped).
+const RENDER_EVERY = 250
 
 // Which taker side to show; colours follow exchange convention
 // (green = buyer was the taker, red = seller).
@@ -50,10 +54,24 @@ export function TradeTape({ market, whale }: { market: Market; whale: number | n
     }
   }, [market.exchange, market.symbol])
 
+  const pending = useRef<TradeRow[]>([])
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current)
+    timer.current = null
+    pending.current = []
+  }, [market.exchange, market.symbol])
+
   useChannels([channels.trades(market)], (m) => {
     if (m.type !== 'trade') return
     const { id, price, size, side, time } = m.data
-    setTape((b) => addTrade(b, { id, price, size, side, time }, KEEP))
+    pending.current.push({ id, price, size, side, time })
+    timer.current ??= setTimeout(() => {
+      timer.current = null
+      const batch = pending.current
+      pending.current = []
+      setTape((b) => batch.reduce((acc, t) => addTrade(acc, t, KEEP), b))
+    }, RENDER_EVERY)
   })
 
   const shown = frozen ?? tape

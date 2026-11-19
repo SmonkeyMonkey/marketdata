@@ -40,6 +40,8 @@ type Kafka struct {
 	TopicSubscriptions string
 	// TopicSettings is the compacted topic of per-market alert settings.
 	TopicSettings string
+	// TopicBooks carries order book snapshots (short retention).
+	TopicBooks string
 }
 
 type Aggregator struct {
@@ -262,6 +264,7 @@ func (e *env) kafka() Kafka {
 		TopicRules:         e.str("KAFKA_TOPIC_ALERT_RULES", "md.alert-rules"),
 		TopicSubscriptions: e.str("KAFKA_TOPIC_SUBSCRIPTIONS", "md.subscriptions"),
 		TopicSettings:      e.str("KAFKA_TOPIC_SETTINGS", "md.settings"),
+		TopicBooks:         e.str("KAFKA_TOPIC_BOOKS", "md.books"),
 	}
 	if len(k.Brokers) == 0 {
 		e.fail("KAFKA_BROKERS must not be empty")

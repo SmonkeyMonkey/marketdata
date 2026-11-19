@@ -155,6 +155,13 @@ ts(16, 8, 'Disconnects by reason', [
 ], { unit: 'ops' });
 y += 8;
 
+// --- order books
+row('Order books');
+ts(0, 8, 'Book snapshots published / s', [['sum by (exchange) (max by (exchange, instance) (rate(md_ingest_book_snapshots_total[$__rate_interval])))', '{{exchange}}']], { unit: 'ops' });
+ts(8, 8, 'Book resyncs (checksum mismatches)', [['sum by (exchange) (increase(md_ingest_book_resyncs_total[5m]))', '{{exchange}}']]);
+ts(16, 8, 'Book frames sent to clients / s', [['sum(rate(md_gateway_published_total{type="book"}[$__rate_interval]))', 'published']], { unit: 'ops' });
+y += 8;
+
 // --- alerts
 row('Alerts');
 ts(0, 8, 'Alerts fired / min', [['sum by (type) (increase(md_alerts_fired_total[1m]))', '{{type}}']]);

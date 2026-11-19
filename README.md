@@ -65,6 +65,15 @@ ClickHouse, real-time analytics, alerts and a websocket gateway.
       (`md.settings`) through the same generic compacted-table component as subscriptions; the
       alerts service applies changes live (verified: lowering SOL-USDT to 500 USDT produced alerts
       from 513 USDT with no restart), and the trade tape highlights by the same threshold.
+- [x] Stage 4 — L2 order books: Kraken (snapshot + updates, every update verified with Kraken's
+      CRC32 checksum of the top 10 levels; a mismatch resets and resubscribes the book), Coinbase
+      (`level2_batch`: full ~38k-level book + batched changes) and Binance (`depth20@100ms` partial
+      snapshots). Book sides are sorted with the best price last, so updates near the top move a
+      few elements (≈240 ns per update on a 40k-level book). Ingesters publish top-50 snapshots at
+      most every 100 ms per market (`md.books`); the gateway forwards only newer snapshots
+      (update id or exchange time) so the two ingester replicas never interleave; per-second spread
+      and imbalance go to ClickHouse (`book_stats`). Verified live: best bid/ask equal each
+      exchange's REST ticker, 0 checksum mismatches.
 - [ ] Stage 3b — Bybit, OKX, Coinbase Advanced
 
 ### Rule index benchmark (one trade checked against n rules of its symbol, Apple M-series core)

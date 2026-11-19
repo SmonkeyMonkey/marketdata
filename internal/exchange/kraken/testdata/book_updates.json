@@ -1,0 +1,5 @@
+{"channel":"book","type":"update","data":[{"symbol":"BTC/USD","bids":[],"asks":[{"price":63791.6,"qty":0.00000000},{"price":63818.6,"qty":0.06267765}],"checksum":2837785283,"timestamp":"2026-11-19T10:16:19.587851Z"}]}
+{"channel":"book","type":"update","data":[{"symbol":"BTC/USD","bids":[],"asks":[{"price":63793.9,"qty":0.07581934}],"checksum":2837785283,"timestamp":"2026-11-19T10:16:19.587851Z"}]}
+{"channel":"book","type":"update","data":[{"symbol":"BTC/USD","bids":[{"price":63743.2,"qty":0.60672683}],"asks":[],"checksum":2837785283,"timestamp":"2026-11-19T10:16:19.588731Z"}]}
+{"channel":"book","type":"update","data":[{"symbol":"BTC/USD","bids":[],"asks":[{"price":63810.8,"qty":0.00000000},{"price":63818.6,"qty":0.06267765}],"checksum":2837785283,"timestamp":"2026-11-19T10:16:19.751532Z"}]}
+{"channel":"book","type":"update","data":[{"symbol":"BTC/USD","bids":[],"asks":[{"price":63770.3,"qty":0.00006120}],"checksum":2543693175,"timestamp":"2026-11-19T10:16:19.759364Z"}]}

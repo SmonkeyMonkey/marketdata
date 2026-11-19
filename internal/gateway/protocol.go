@@ -22,6 +22,9 @@ func TradesChannel(exchange, symbol string) string { return "trades:" + exchange
 func AlertsChannel(exchange, symbol string) string { return "alerts:" + exchange + ":" + symbol }
 func RuleChannel(id string) string                 { return "alerts:rule:" + id }
 
+// BookChannel carries order book snapshots (top 50 levels, ~10 per second).
+func BookChannel(exchange, symbol string) string { return "book:" + exchange + ":" + symbol }
+
 func CandlesChannel(c model.Candle) string {
 	return "candles:" + c.Exchange + ":" + c.Symbol + ":" + model.PeriodName(c.Interval)
 }
@@ -33,7 +36,7 @@ func ValidChannel(ch string) error {
 	switch {
 	case len(ch) > 64:
 		return fmt.Errorf("channel too long")
-	case (parts[0] == "trades" || parts[0] == "alerts") && len(parts) == 3 && parts[1] != "" && parts[2] != "":
+	case (parts[0] == "trades" || parts[0] == "alerts" || parts[0] == "book") && len(parts) == 3 && parts[1] != "" && parts[2] != "":
 		return nil
 	case parts[0] == "candles" && len(parts) == 4 && parts[1] != "" && parts[2] != "" && parts[3] != "":
 		return nil
@@ -124,6 +127,35 @@ func encodeAlert(a model.Alert, channel string, now time.Time) ([]byte, error) {
 		ID: a.ID, Type: a.Type, Exchange: a.Exchange, Symbol: a.Symbol, Message: a.Message,
 		Price: a.Price, Time: a.Time, RuleID: a.RuleID, Notional: a.Notional, ChangePct: a.ChangePct,
 	}})
+}
+
+type bookMsg struct {
+	Exchange string `json:"exchange"`
+	Symbol   string `json:"symbol"`
+	// Levels as [price, size] pairs, best first: compact for ~10 frames/s.
+	Bids      [][2]decimal.Decimal `json:"bids"`
+	Asks      [][2]decimal.Decimal `json:"asks"`
+	Time      time.Time            `json:"time"`
+	Mid       decimal.Decimal      `json:"mid"`
+	Spread    decimal.Decimal      `json:"spread"`
+	SpreadBps decimal.Decimal      `json:"spread_bps"`
+	// Imbalance over the top 10 levels, -1..1 (positive: more bid size).
+	Imbalance decimal.Decimal `json:"imbalance"`
+}
+
+func encodeBook(b model.Book, now time.Time) ([]byte, error) {
+	pairs := func(ls []model.BookLevel) [][2]decimal.Decimal {
+		out := make([][2]decimal.Decimal, len(ls))
+		for i, l := range ls {
+			out[i] = [2]decimal.Decimal{l.Price, l.Size}
+		}
+		return out
+	}
+	m := bookMsg{Exchange: b.Exchange, Symbol: b.Symbol, Bids: pairs(b.Bids), Asks: pairs(b.Asks), Time: b.ExchangeTime}
+	if s, ok := b.Stats(10); ok {
+		m.Mid, m.Spread, m.SpreadBps, m.Imbalance = s.Mid, s.Spread, s.SpreadBps, s.Imbalance
+	}
+	return json.Marshal(envelope{Type: "book", Channel: BookChannel(b.Exchange, b.Symbol), TS: now.UnixMilli(), Data: m})
 }
 
 func control(typ, errMsg string, channels []string) []byte {

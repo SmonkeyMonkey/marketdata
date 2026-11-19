@@ -253,3 +253,51 @@ func DecodeSettings(b []byte) (model.MarketSettings, error) {
 	}
 	return model.MarketSettings{Exchange: m.Exchange, Symbol: m.Symbol, WhaleNotional: whale, UpdatedAt: fromUnixNano(m.UpdatedUnixNano)}, nil
 }
+
+func EncodeBook(b model.Book) ([]byte, error) {
+	levels := func(ls []model.BookLevel) []*pb.BookLevel {
+		out := make([]*pb.BookLevel, len(ls))
+		for i, l := range ls {
+			out[i] = &pb.BookLevel{Price: l.Price.String(), Size: l.Size.String()}
+		}
+		return out
+	}
+	return proto.Marshal(&pb.Book{
+		Exchange: b.Exchange, Symbol: b.Symbol, Bids: levels(b.Bids), Asks: levels(b.Asks),
+		ExchangeTimeUnixNano: unixNano(b.ExchangeTime), ReceiveTimeUnixNano: unixNano(b.ReceiveTime), Seq: b.Seq,
+	})
+}
+
+func DecodeBook(b []byte) (model.Book, error) {
+	var m pb.Book
+	if err := proto.Unmarshal(b, &m); err != nil {
+		return model.Book{}, fmt.Errorf("decode book: %w", err)
+	}
+	levels := func(ls []*pb.BookLevel) ([]model.BookLevel, error) {
+		out := make([]model.BookLevel, len(ls))
+		for i, l := range ls {
+			p, err := decimal.NewFromString(l.Price)
+			if err != nil {
+				return nil, fmt.Errorf("book price %q: %w", l.Price, err)
+			}
+			s, err := decimal.NewFromString(l.Size)
+			if err != nil {
+				return nil, fmt.Errorf("book size %q: %w", l.Size, err)
+			}
+			out[i] = model.BookLevel{Price: p, Size: s}
+		}
+		return out, nil
+	}
+	bids, err := levels(m.Bids)
+	if err != nil {
+		return model.Book{}, err
+	}
+	asks, err := levels(m.Asks)
+	if err != nil {
+		return model.Book{}, err
+	}
+	return model.Book{
+		Exchange: m.Exchange, Symbol: m.Symbol, Bids: bids, Asks: asks,
+		ExchangeTime: fromUnixNano(m.ExchangeTimeUnixNano), ReceiveTime: fromUnixNano(m.ReceiveTimeUnixNano), Seq: m.Seq,
+	}, nil
+}

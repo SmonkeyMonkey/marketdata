@@ -16,6 +16,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"marketdata/internal/book"
 	"marketdata/internal/exchange"
 	"marketdata/internal/model"
 )
@@ -32,7 +33,8 @@ type Feed struct {
 	products []string
 	// Trade IDs are sequential per product; kept across reconnects so the
 	// last_match after a reconnect reveals what was missed.
-	ids *exchange.TradeIDs
+	ids   *exchange.TradeIDs
+	books *book.Tracker
 }
 
 var (
@@ -41,7 +43,7 @@ var (
 )
 
 func New(url string, products []string) *Feed {
-	return &Feed{url: url, products: slices.Clone(products), ids: exchange.NewTradeIDs(Name)}
+	return &Feed{url: url, products: slices.Clone(products), ids: exchange.NewTradeIDs(Name), books: book.NewTracker(Name)}
 }
 
 func (f *Feed) Name() string { return Name }
@@ -81,6 +83,7 @@ func (f *Feed) SetSymbols(symbols []string) ([][]byte, error) {
 		frames = append(frames, m)
 		for _, p := range removed {
 			f.ids.Forget(p)
+			f.books.Forget(p)
 		}
 	}
 	return frames, nil
@@ -90,7 +93,9 @@ func request(typ string, products []string) ([]byte, error) {
 	return json.Marshal(map[string]any{
 		"type":        typ,
 		"product_ids": products,
-		"channels":    []string{"matches", "heartbeat"},
+		// level2_batch is the public L2 book (level2/level3/full need auth):
+		// a full snapshot, then changes batched every ~50 ms.
+		"channels": []string{"matches", "heartbeat", "level2_batch"},
 	})
 }
 
@@ -106,6 +111,10 @@ type message struct {
 	LastTradeID int64           `json:"last_trade_id"`
 	Message     string          `json:"message"`
 	Reason      string          `json:"reason"`
+	// level2_batch
+	Bids    [][2]decimal.Decimal `json:"bids"`
+	Asks    [][2]decimal.Decimal `json:"asks"`
+	Changes [][3]string          `json:"changes"`
 }
 
 func (f *Feed) Handle(frame []byte, received time.Time, dst []model.Event) ([]model.Event, error) {
@@ -115,8 +124,18 @@ func (f *Feed) Handle(frame []byte, received time.Time, dst []model.Event) ([]mo
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	dst, err := f.handle(m, received, dst)
+	// Any frame (heartbeats arrive every second) publishes books whose last
+	// change waited for the rate limit.
+	return f.books.Flush(received, dst), err
+}
 
+func (f *Feed) handle(m message, received time.Time, dst []model.Event) ([]model.Event, error) {
 	switch m.Type {
+	case "snapshot":
+		return f.bookSnapshot(m, received, dst), nil
+	case "l2update":
+		return f.bookUpdate(m, received, dst)
 	case "match", "last_match":
 		if !slices.Contains(f.products, m.ProductID) {
 			return dst, nil // in flight when we unsubscribed

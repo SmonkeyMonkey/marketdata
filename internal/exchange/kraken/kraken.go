@@ -16,6 +16,7 @@ import (
 
 	"github.com/shopspring/decimal"
 
+	"marketdata/internal/book"
 	"marketdata/internal/exchange"
 	"marketdata/internal/model"
 )
@@ -23,17 +24,26 @@ import (
 const Name = "kraken"
 
 type Feed struct {
-	// mu guards symbols and ids: Handle runs on the reader goroutine while
+	// mu guards everything below: Handle runs on the reader goroutine while
 	// SetSymbols is called by the subscription controller.
 	mu      sync.Mutex
 	url     string
 	symbols []string // native form: BTC/USD
 	ids     *exchange.TradeIDs
+	books   *book.Tracker
+	// precision per native symbol, from the instrument channel; needed to
+	// format prices and sizes for the book checksum.
+	precision map[string]precision
+	outbox    [][]byte
+	// resync rate limit per native symbol (see handleBook).
+	lastResync    map[string]time.Time
+	pendingResync map[string]bool
 }
 
 var (
 	_ exchange.Feed    = (*Feed)(nil)
 	_ exchange.Dynamic = (*Feed)(nil)
+	_ exchange.Outbox  = (*Feed)(nil)
 )
 
 // New takes canonical symbols (BTC-USD).
@@ -45,7 +55,11 @@ func New(url string, symbols []string) (*Feed, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Feed{url: url, symbols: nat, ids: exchange.NewTradeIDs(Name)}, nil
+	return &Feed{
+		url: url, symbols: nat, ids: exchange.NewTradeIDs(Name),
+		books: book.NewTracker(Name), precision: map[string]precision{},
+		lastResync: map[string]time.Time{}, pendingResync: map[string]bool{},
+	}, nil
 }
 
 func toNative(symbols []string) ([]string, error) {
@@ -77,43 +91,70 @@ func (f *Feed) SetSymbols(symbols []string) ([][]byte, error) {
 		if len(op.symbols) == 0 {
 			continue
 		}
-		b, err := request(op.method, op.symbols)
+		b, err := requests(op.method, op.symbols)
 		if err != nil {
 			return nil, err
 		}
-		frames = append(frames, b)
+		frames = append(frames, b...)
 	}
 	for _, s := range removed {
-		f.ids.Forget(strings.Replace(s, "/", "-", 1))
+		f.ids.Forget(canonical(s))
+		f.books.Forget(canonical(s))
 	}
 	return frames, nil
 }
 
-func request(method string, symbols []string) ([]byte, error) {
-	params := map[string]any{"channel": "trade", "symbol": symbols}
+func canonical(native string) string { return strings.Replace(native, "/", "-", 1) }
+
+// requests builds (un)subscribe frames for the trade and book channels.
+func requests(method string, symbols []string) ([][]byte, error) {
+	trade := map[string]any{"channel": "trade", "symbol": symbols}
+	books := map[string]any{"channel": "book", "symbol": symbols, "depth": bookDepth}
 	if method == "subscribe" {
-		params["snapshot"] = true
+		trade["snapshot"] = true
 	}
-	return json.Marshal(map[string]any{"method": method, "params": params})
+	var out [][]byte
+	for _, params := range []map[string]any{trade, books} {
+		b, err := json.Marshal(map[string]any{"method": method, "params": params})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, nil
+}
+
+// Outbox returns frames the feed wants sent (book resubscriptions).
+func (f *Feed) Outbox() [][]byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.outbox
+	f.outbox = nil
+	return out
 }
 
 func (f *Feed) Name() string { return Name }
 func (f *Feed) URL() string  { return f.url }
 
-// Subscriptions requests a snapshot of recent trades: after a reconnect the
-// snapshot overlaps what we already saw, which lets the ID tracker tell
-// whether anything was missed in between.
+// Subscriptions requests instrument info (price/size precision, for book
+// checksums), recent trades (after a reconnect the trade snapshot overlaps
+// what we already saw, so the ID tracker can tell whether anything was
+// missed) and the books.
 func (f *Feed) Subscriptions() ([][]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.symbols) == 0 {
 		return nil, nil
 	}
-	msg, err := request("subscribe", f.symbols)
+	instrument, err := json.Marshal(map[string]any{"method": "subscribe", "params": map[string]any{"channel": "instrument", "snapshot": true}})
 	if err != nil {
 		return nil, err
 	}
-	return [][]byte{msg}, nil
+	rest, err := requests("subscribe", f.symbols)
+	if err != nil {
+		return nil, err
+	}
+	return append([][]byte{instrument}, rest...), nil
 }
 
 type message struct {
@@ -150,21 +191,34 @@ func (f *Feed) Handle(frame []byte, received time.Time, dst []model.Event) ([]mo
 		}
 		return dst, nil
 	}
-	if m.Channel != "trade" { // heartbeat, status
-		return dst, nil
-	}
 
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var err error
+	switch m.Channel {
+	case "trade":
+		dst, err = f.handleTrades(m, received, dst)
+	case "book":
+		dst, err = f.handleBook(m, received, dst)
+	case "instrument":
+		err = f.handleInstrument(m)
+	}
+	f.retryResyncs(received)
+	// Any frame (heartbeats arrive every second) publishes books whose last
+	// change waited for the rate limit.
+	return f.books.Flush(received, dst), err
+}
+
+func (f *Feed) handleTrades(m message, received time.Time, dst []model.Event) ([]model.Event, error) {
 	var trades []trade
 	if err := json.Unmarshal(m.Data, &trades); err != nil {
 		return dst, fmt.Errorf("kraken: decode trades: %w", err)
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
 	for _, t := range trades {
 		if !slices.Contains(f.symbols, t.Symbol) {
 			continue // in flight when we unsubscribed
 		}
-		symbol := strings.Replace(t.Symbol, "/", "-", 1)
+		symbol := canonical(t.Symbol)
 		var dup bool
 		dst, dup = f.ids.Observe(symbol, t.TradeID, received, dst)
 		if dup {

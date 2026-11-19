@@ -76,3 +76,10 @@ func Diff(prev, next []string) (added, removed []string) {
 	}
 	return added, removed
 }
+
+// Outbox is implemented by feeds that sometimes need to send frames on their
+// own, e.g. to resubscribe a book after a checksum mismatch. The runner
+// sends whatever Outbox returns after each handled frame.
+type Outbox interface {
+	Outbox() [][]byte
+}

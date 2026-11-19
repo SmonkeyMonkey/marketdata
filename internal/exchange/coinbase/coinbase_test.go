@@ -167,8 +167,8 @@ func TestSetSymbols(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{
-		`{"channels":["matches","heartbeat"],"product_ids":["SOL-USD"],"type":"subscribe"}`,
-		`{"channels":["matches","heartbeat"],"product_ids":["ETH-USD"],"type":"unsubscribe"}`,
+		`{"channels":["matches","heartbeat","level2_batch"],"product_ids":["SOL-USD"],"type":"subscribe"}`,
+		`{"channels":["matches","heartbeat","level2_batch"],"product_ids":["ETH-USD"],"type":"unsubscribe"}`,
 	}
 	if len(frames) != 2 || string(frames[0]) != want[0] || string(frames[1]) != want[1] {
 		t.Errorf("frames = %s", frames)
@@ -191,8 +191,44 @@ func TestSubscriptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `{"channels":["matches","heartbeat"],"product_ids":["BTC-USD","ETH-USD"],"type":"subscribe"}`
+	want := `{"channels":["matches","heartbeat","level2_batch"],"product_ids":["BTC-USD","ETH-USD"],"type":"subscribe"}`
 	if len(subs) != 1 || string(subs[0]) != want {
 		t.Errorf("got %s\nwant %s", subs, want)
+	}
+}
+
+func bookEvents(ev []model.Event) []model.Book {
+	var out []model.Book
+	for _, e := range ev {
+		if b, ok := e.(model.Book); ok {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func TestBookSnapshotAndUpdate(t *testing.T) {
+	f := New(testURL, []string{"BTC-USD"})
+	// Updates before the snapshot are ignored.
+	if bs := bookEvents(handle(t, f, frame(t, "l2update.json"))); len(bs) != 0 {
+		t.Fatal("published a book before its snapshot")
+	}
+	bs := bookEvents(handle(t, f, frame(t, "l2_snapshot.json")))
+	if len(bs) != 1 {
+		t.Fatalf("snapshot: %d books", len(bs))
+	}
+	b := bs[0]
+	if b.Exchange != "coinbase" || b.Symbol != "BTC-USD" || len(b.Bids) != 5 || len(b.Asks) != 5 {
+		t.Fatalf("book = %+v", b)
+	}
+	if b.Bids[0].Price.String() != "63777.69" || b.Asks[0].Price.String() != "63777.7" || b.ExchangeTime.IsZero() {
+		t.Errorf("best bid/ask = %s/%s time %s", b.Bids[0].Price, b.Asks[0].Price, b.ExchangeTime)
+	}
+}
+
+func TestSubscribesToLevel2Batch(t *testing.T) {
+	subs, _ := New(testURL, []string{"BTC-USD"}).Subscriptions()
+	if !strings.Contains(string(subs[0]), `"level2_batch"`) {
+		t.Errorf("subscription = %s", subs[0])
 	}
 }

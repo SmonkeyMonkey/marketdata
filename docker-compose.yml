@@ -210,6 +210,8 @@ services:
         $$T --bootstrap-server $$B --create --if-not-exists --topic md.alert-rules --partitions 1 --replication-factor 1 --config cleanup.policy=compact
         $$T --bootstrap-server $$B --create --if-not-exists --topic md.subscriptions --partitions 1 --replication-factor 1 --config cleanup.policy=compact
         $$T --bootstrap-server $$B --create --if-not-exists --topic md.settings --partitions 1 --replication-factor 1 --config cleanup.policy=compact
+        # Book snapshots go stale in seconds: keep an hour for replays/debugging.
+        $$T --bootstrap-server $$B --create --if-not-exists --topic md.books --partitions 12 --replication-factor 1 --config retention.ms=3600000
     restart: "no"
 
   kafka-ui:
