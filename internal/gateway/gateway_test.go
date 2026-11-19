@@ -287,31 +287,21 @@ func TestShutdownClosesClientsWithGoingAway(t *testing.T) {
 	}
 }
 
-// Both ingesters publish the same books; a client must never get an older
-// snapshot after a newer one.
-func TestBookSnapshotsOnlyMoveForward(t *testing.T) {
-	f := &Feed{lastBook: map[string]bookMark{}}
-	t0 := time.Unix(1000, 0)
-	kraken := func(at time.Duration) model.Book {
-		return model.Book{Exchange: "kraken", Symbol: "BTC-USD", ExchangeTime: t0.Add(at)}
+func TestArbSnapshotRelayed(t *testing.T) {
+	e := newEnv(t, Options{})
+	c := dial(t, e.url)
+	send(t, c, request{Op: "subscribe", Channels: []string{"arb:BTC-USD"}})
+	if m := recv(t, c); m.Type != "subscribed" {
+		t.Fatalf("got %+v", m)
 	}
-	binance := func(seq int64, at time.Duration) model.Book {
-		return model.Book{Exchange: "binance", Symbol: "BTC-USDT", Seq: seq, ExchangeTime: t0.Add(at)}
-	}
-	for i, c := range []struct {
-		b    model.Book
-		want bool
-	}{
-		{kraken(0), true},
-		{kraken(0), false},                 // the other ingester's copy
-		{kraken(-time.Millisecond), false}, // older
-		{kraken(time.Millisecond), true},
-		{binance(10, 0), true},
-		{binance(9, time.Second), false}, // older update id wins over a later receive time
-		{binance(11, -time.Second), true},
-	} {
-		if got := f.newer(c.b); got != c.want {
-			t.Errorf("case %d: newer = %v, want %v", i, got, c.want)
-		}
+	waitFor(t, func() bool { return e.hub.Subscribers("arb:BTC-USD") == 1 })
+	snap := model.ArbSnapshot{Asset: "BTC-USD", Time: time.Now(),
+		Venues: []model.ArbVenue{{Exchange: "binance", Symbol: "BTC-USDT", Bid: decimal.RequireFromString("64000.1"), RateSource: "peg"}},
+		Routes: []model.ArbRoute{{BuyExchange: "kraken", BuySymbol: "BTC-USD", SellExchange: "binance", SellSymbol: "BTC-USDT", NetBps: decimal.RequireFromString("-12.5")}}}
+	b, _ := encodeArb(snap, time.Now())
+	e.hub.Publish(ArbChannel("BTC-USD"), b)
+	m := recv(t, c)
+	if m.Type != "arb" || !strings.Contains(string(m.Data), `"buy":"kraken:BTC-USD"`) || !strings.Contains(string(m.Data), `"net_bps":"-12.5"`) {
+		t.Errorf("got %s %s", m.Type, m.Data)
 	}
 }

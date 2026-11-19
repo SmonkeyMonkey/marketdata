@@ -10,14 +10,16 @@ import (
 
 	"github.com/twmb/franz-go/pkg/kgo"
 
+	"marketdata/internal/book"
 	"marketdata/internal/codec"
 	"marketdata/internal/config"
 	"marketdata/internal/dedup"
+	"marketdata/internal/fetcherr"
 	"marketdata/internal/metrics"
-	"marketdata/internal/model"
 )
 
-// Feed reads trades and candles from Kafka and publishes them to the hub.
+// Feed reads trades, candles, books, alerts and arbitrage snapshots from
+// Kafka and publishes them to the hub.
 //
 // Every gateway instance must see every message (its clients may subscribe
 // to anything), so this is a plain consumer of all partitions, not a member
@@ -32,33 +34,9 @@ type Feed struct {
 
 	lastRecord atomic.Int64 // unix nanos of the last record read from Kafka
 
-	// lastBook orders book snapshots per market: both ingesters publish the
+	// books orders book snapshots per market: both ingesters publish the
 	// same books, and a client must never see an older one after a newer.
-	lastBook map[string]bookMark
-}
-
-type bookMark struct {
-	seq int64
-	at  time.Time
-}
-
-// newer reports whether b is newer than the last snapshot sent for its
-// market: by exchange update id when both have one, else by exchange time.
-func (f *Feed) newer(b model.Book) bool {
-	key := b.Exchange + ":" + b.Symbol
-	prev, ok := f.lastBook[key]
-	isNewer := !ok
-	if ok {
-		if b.Seq > 0 && prev.seq > 0 {
-			isNewer = b.Seq > prev.seq
-		} else {
-			isNewer = b.ExchangeTime.After(prev.at)
-		}
-	}
-	if isNewer {
-		f.lastBook[key] = bookMark{seq: b.Seq, at: b.ExchangeTime}
-	}
-	return isNewer
+	books *book.Latest
 }
 
 // Fresh reports an error when nothing was read from Kafka for maxAge: the
@@ -77,19 +55,20 @@ func (f *Feed) Fresh(maxAge time.Duration) error {
 func NewFeed(hub *Hub, k config.Kafka, dedupWindow int, m *metrics.Gateway, log *slog.Logger, opts ...kgo.Opt) (*Feed, error) {
 	opts = append([]kgo.Opt{
 		kgo.SeedBrokers(k.Brokers...),
-		kgo.ConsumeTopics(k.TopicTrades, k.TopicCandles, k.TopicAlerts, k.TopicBooks),
+		kgo.ConsumeTopics(k.TopicTrades, k.TopicCandles, k.TopicAlerts, k.TopicBooks, k.TopicArb),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
 	}, opts...)
 	cl, err := kgo.NewClient(opts...)
 	if err != nil {
 		return nil, fmt.Errorf("kafka client: %w", err)
 	}
-	return &Feed{cl: cl, hub: hub, topics: k, seen: dedup.NewWindow(dedupWindow), metrics: m, log: log, lastBook: map[string]bookMark{}}, nil
+	return &Feed{cl: cl, hub: hub, topics: k, seen: dedup.NewWindow(dedupWindow), metrics: m, log: log, books: book.NewLatest()}, nil
 }
 
 func (f *Feed) Close() { f.cl.Close() }
 
 func (f *Feed) Run(ctx context.Context) error {
+	fetchErrs := fetcherr.New(f.log, time.Minute)
 	for {
 		fetches := f.cl.PollFetches(ctx)
 		if ctx.Err() != nil {
@@ -98,9 +77,9 @@ func (f *Feed) Run(ctx context.Context) error {
 		if fetches.IsClientClosed() {
 			return errors.New("kafka client closed")
 		}
-		fetches.EachError(func(topic string, p int32, err error) {
-			f.log.Error("kafka fetch error", "topic", topic, "partition", p, "err", err)
-		})
+		if err := fetchErrs.Check(fetches); err != nil {
+			return err
+		}
 		fetches.EachRecord(f.handle)
 	}
 }
@@ -146,11 +125,19 @@ func (f *Feed) handle(r *kgo.Record) {
 			err = derr
 			break
 		}
-		if !f.newer(b) {
+		if !f.books.Accept(b) {
 			return // the other ingester's copy, or an older snapshot
 		}
 		kind, channel = "book", BookChannel(b.Exchange, b.Symbol)
 		msg, err = encodeBook(b, now)
+	case f.topics.TopicArb:
+		s, derr := codec.DecodeArbSnapshot(r.Value)
+		if derr != nil {
+			err = derr
+			break
+		}
+		kind, channel = "arb", ArbChannel(s.Asset)
+		msg, err = encodeArb(s, now)
 	case f.topics.TopicAlerts:
 		a, derr := codec.DecodeAlert(r.Value)
 		if derr != nil {

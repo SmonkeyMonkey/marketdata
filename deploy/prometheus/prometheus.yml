@@ -18,6 +18,9 @@ scrape_configs:
   - job_name: alerts
     static_configs:
       - targets: ["alerts:9105"]
+  - job_name: arbitrage
+    static_configs:
+      - targets: ["arbitrage:9107"]
   - job_name: api
     static_configs:
       - targets: ["api:9106"]

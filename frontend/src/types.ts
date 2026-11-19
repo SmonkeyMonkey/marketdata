@@ -52,7 +52,7 @@ export interface CandleMsg {
   trades: number
 }
 
-export type AlertType = 'price_rule' | 'whale_trade' | 'price_move'
+export type AlertType = 'price_rule' | 'whale_trade' | 'price_move' | 'arbitrage'
 
 export interface AlertMsg {
   id: string
@@ -79,6 +79,39 @@ export interface BookMsg {
   imbalance: Decimal // -1..1 over the top 10 levels; > 0: more bid size
 }
 
+// Cross-exchange comparison of one asset (arb:<asset>). Prices are in the
+// asset's common quote: USDT and USDC markets are converted to USD.
+export interface ArbVenue {
+  exchange: string
+  symbol: string
+  bid: Decimal
+  ask: Decimal
+  bid_size: Decimal
+  ask_size: Decimal
+  rate: Decimal // native quote -> common quote
+  rate_source: string // "1", a market such as kraken:USDT-USD, or "peg"
+  fee_bps: Decimal // taker
+  time: string
+}
+
+export interface ArbRoute {
+  buy: string // exchange:symbol, bought at its best ask
+  sell: string // exchange:symbol, sold at its best bid
+  buy_price: Decimal
+  sell_price: Decimal
+  gross_bps: Decimal // before fees
+  net_bps: Decimal // after both taker fees; > 0 is an opportunity
+  size: Decimal // base units profitable after fees, walking both books
+  profit: Decimal // common quote, over size
+}
+
+export interface ArbMsg {
+  asset: string
+  time: string
+  venues: ArbVenue[]
+  routes: ArbRoute[] // best net first
+}
+
 interface Envelope<T extends string, D> {
   type: T
   channel: string
@@ -91,6 +124,7 @@ export type ServerMessage =
   | Envelope<'candle', CandleMsg>
   | Envelope<'alert', AlertMsg>
   | Envelope<'book', BookMsg>
+  | Envelope<'arb', ArbMsg>
   | { type: 'subscribed' | 'unsubscribed'; ts: number; channels: string[] }
   | { type: 'error'; ts: number; error: string }
   | { type: 'pong'; ts: number }
@@ -109,6 +143,30 @@ export interface TradeRow {
 }
 
 export type AlertRow = AlertMsg
+
+export interface ArbWindowRow {
+  id: string
+  asset: string
+  buy: string
+  sell: string
+  opened: string
+  closed: string
+  duration_ms: number
+  peak_net_bps: number
+  peak_gross_bps: number
+  peak_size: Decimal
+  peak_profit: Decimal
+}
+
+export interface ArbRouteStats {
+  buy: string
+  sell: string
+  windows: number
+  total_ms: number
+  median_ms: number
+  max_net_bps: number
+  sum_peak_profit: Decimal
+}
 
 export interface Rule {
   id: string
@@ -130,6 +188,16 @@ export interface Settings {
 
 export const quoteOf = (symbol: string) => symbol.slice(symbol.lastIndexOf('-') + 1)
 
+// Quotes compared as another one; mirrors ARB_QUOTES of the arbitrage service.
+const COMMON_QUOTE: Record<string, string> = { USDT: 'USD', USDC: 'USD' }
+
+/** Asset a market is compared under across exchanges: BTC-USDT -> BTC-USD. */
+export const assetOf = (symbol: string) => {
+  const i = symbol.lastIndexOf('-')
+  const quote = symbol.slice(i + 1)
+  return `${symbol.slice(0, i)}-${COMMON_QUOTE[quote] ?? quote}`
+}
+
 export const whaleFor = (s: Settings | null, m: Market): Decimal | null =>
   s ? (s.markets.find((x) => x.exchange === m.exchange && x.symbol === m.symbol)?.whale_notional ?? s.default_whale) : null
 
@@ -138,4 +206,5 @@ export const channels = {
   candles: (m: Market, p: BasePeriod) => `candles:${m.exchange}:${m.symbol}:${p}`,
   alerts: (m: Market) => `alerts:${m.exchange}:${m.symbol}`,
   book: (m: Market) => `book:${m.exchange}:${m.symbol}`,
+  arb: (asset: string) => `arb:${asset}`,
 }

@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertsPanel } from './components/AlertsPanel'
+import { ArbPanel } from './components/ArbPanel'
 import { MarketsBoard } from './components/MarketsBoard'
 import { OrderBook } from './components/OrderBook'
 import { PriceChart } from './components/PriceChart'
-import { RulesPanel } from './components/RulesPanel'
 import { TradeTape } from './components/TradeTape'
 import { SettingsDialog } from './components/SettingsDialog'
-import { WhaleSettings } from './components/WhaleSettings'
 import { api } from './lib/api'
 import { fmtPrice } from './lib/format'
 import { useLastPrice, useSocketState } from './lib/hooks'
@@ -23,6 +22,7 @@ export function App() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const state = useSocketState()
+  const closeSettings = useCallback(() => setSettingsOpen(false), [])
   const { price: lastPrice, precision } = useLastPrice(market)
 
   // The market list is shared state (another tab or user may add markets),
@@ -72,10 +72,13 @@ export function App() {
           ))}
         </div>
         <span className={`status ${state}`}>{state === 'open' ? 'live' : state}</span>
-        <button onClick={() => setSettingsOpen(true)}>Settings</button>
+        <button onClick={() => setSettingsOpen(true)} title="Price alerts and whale thresholds">Alerts & settings</button>
       </header>
       {error && <p className="error">Cannot load markets: {error}</p>}
-      {settingsOpen && <SettingsDialog settings={settings} onSaved={setSettings} onClose={() => setSettingsOpen(false)} />}
+      {market && (
+        <SettingsDialog open={settingsOpen} market={market} lastPrice={lastPrice} settings={settings}
+          onSaved={setSettings} onClose={closeSettings} />
+      )}
       {market && (
         <main>
           <PriceChart market={market} period={period} />
@@ -83,10 +86,7 @@ export function App() {
           <TradeTape market={market} whale={Number(whaleFor(settings, market) ?? 0) || null} />
           <MarketsBoard markets={markets} selected={market} onSelect={setMarket} onChanged={loadMarkets} />
           <AlertsPanel markets={markets} />
-          <section className="panel rules">
-            <RulesPanel market={market} lastPrice={lastPrice} />
-            <WhaleSettings market={market} settings={settings} onSaved={setSettings} onOpenSettings={() => setSettingsOpen(true)} />
-          </section>
+          <ArbPanel market={market} />
         </main>
       )}
     </div>

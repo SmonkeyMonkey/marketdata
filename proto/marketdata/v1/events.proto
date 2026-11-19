@@ -72,6 +72,7 @@ enum AlertType {
   ALERT_TYPE_PRICE_RULE = 1;
   ALERT_TYPE_WHALE_TRADE = 2;
   ALERT_TYPE_PRICE_MOVE = 3;
+  ALERT_TYPE_ARBITRAGE = 4;
 }
 
 // Alert is a fired alert. id is deterministic, so a replay after a crash
@@ -141,4 +142,72 @@ message Gap {
   int64 detected_at_unix_nano = 6;
   // Ingester instance that missed the trades.
   string source = 7;
+}
+
+// ArbVenue is one market's top of book for cross-exchange comparison.
+// Prices are converted to the asset's common quote (USDT and USDC to USD).
+message ArbVenue {
+  string exchange = 1;
+  string symbol = 2;
+  string bid = 3;
+  string ask = 4;
+  string bid_size = 5;
+  string ask_size = 6;
+  // Native quote -> common quote rate the prices were converted with.
+  string rate = 7;
+  // Where the rate came from: "1" for the common quote itself, a market
+  // (kraken:USDT-USD) or "peg" when that market has no fresh book.
+  string rate_source = 8;
+  string taker_fee_bps = 9;
+  int64 book_time_unix_nano = 10;
+}
+
+// ArbRoute is buying on one market and selling on another at once.
+message ArbRoute {
+  string buy_exchange = 1;
+  string buy_symbol = 2;
+  string sell_exchange = 3;
+  string sell_symbol = 4;
+  // Best ask of the buy market, best bid of the sell market (common quote).
+  string buy_price = 5;
+  string sell_price = 6;
+  // Top-of-book spread before and after both taker fees, in basis points.
+  string gross_bps = 7;
+  string net_bps = 8;
+  // Base amount that can be traded while it stays profitable after fees,
+  // walking both books, and the profit over it (common quote).
+  string size = 9;
+  string profit = 10;
+}
+
+// ArbSnapshot compares every market of one asset (e.g. BTC-USD: coinbase
+// BTC-USD, kraken BTC-USD, binance BTC-USDT). Published at most every
+// ~250 ms per asset; short retention.
+message ArbSnapshot {
+  string asset = 1;
+  int64 time_unix_nano = 2;
+  repeated ArbVenue venues = 3;
+  // Every ordered pair of venues, best net first.
+  repeated ArbRoute routes = 4;
+}
+
+// ArbWindow is one closed opportunity: a route that stayed profitable after
+// fees from opened to closed. id is derived from the route and the book that
+// opened it, so replicas produce the same id.
+message ArbWindow {
+  string id = 1;
+  string asset = 2;
+  string buy_exchange = 3;
+  string buy_symbol = 4;
+  string sell_exchange = 5;
+  string sell_symbol = 6;
+  int64 opened_unix_nano = 7;
+  int64 closed_unix_nano = 8;
+  string peak_net_bps = 9;
+  string peak_gross_bps = 10;
+  // Largest profitable size and its profit seen during the window.
+  string peak_size = 11;
+  string peak_profit = 12;
+  // Evaluations (book updates) during which the window was open.
+  int64 updates = 13;
 }

@@ -25,9 +25,9 @@ h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing
 .status.reconnecting, .status.connecting { color: var(--warn); }
 main {
   flex: 1; min-height: 0; display: grid; gap: 8px; padding: 8px;
-  grid-template-columns: 1fr 1fr 1fr 290px 300px;
-  grid-template-rows: 1fr 260px;
-  grid-template-areas: "chart chart chart book tape" "markets alerts rules book tape";
+  grid-template-columns: 1fr 1fr 2fr 290px 300px;
+  grid-template-rows: 1fr 280px;
+  grid-template-areas: "chart chart chart book tape" "markets alerts arb book tape";
 }
 .chart { grid-area: chart; position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
 .chart-canvas { position: absolute; inset: 0; }
@@ -36,7 +36,24 @@ main {
 .tape { grid-area: tape; }
 .markets { grid-area: markets; }
 .alerts { grid-area: alerts; }
-.rules { grid-area: rules; }
+.arb { grid-area: arb; container-type: inline-size; }
+/* Wide enough: venues and the route matrix side by side. */
+@container (min-width: 560px) {
+  .arb-live { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; align-items: start; }
+  .arb-live .arb-best { grid-column: 1 / -1; }
+}
+.arb h2 { display: flex; gap: 8px; align-items: baseline; }
+.arb .toggle { margin-left: auto; display: flex; gap: 4px; }
+.arb .toggle button { padding: 0 6px; font-size: 11px; text-transform: none; letter-spacing: 0; }
+.arb table { margin-bottom: 8px; }
+.arb-matrix th { font-weight: normal; }
+.arb-matrix td { border: 1px solid var(--border); }
+.arb-matrix td.arb-open { background: #26a69a33; color: var(--up); font-weight: 700; }
+.arb-best { margin: 0; font-size: 12px; }
+.arb-best .up, .arb .up { color: var(--up); }
+.arb-best .down { color: var(--down); }
+.arb-windows li { font-size: 12px; padding: 2px 0; }
+.badge.arbitrage { background: #26a69a33; color: var(--up); }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 th { text-align: left; color: var(--muted); font-weight: normal; }
 td, th { padding: 2px 4px; }
@@ -95,6 +112,9 @@ button:disabled { opacity: .5; cursor: default; }
 .modal-backdrop { position: fixed; inset: 0; background: #0009; display: grid; place-items: center; z-index: 10; }
 .modal { width: min(560px, calc(100vw - 32px)); max-height: 80vh; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
 .modal header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.modal-backdrop[hidden], .modal [hidden] { display: none; }
+.tabs { display: flex; gap: 4px; }
+.modal .whale-settings { margin-top: 0; border-top: 0; padding-top: 0; }
 .modal h2 { margin: 0; }
 .modal h3 { font-size: 12px; margin: 12px 0 4px; color: var(--warn); text-transform: uppercase; letter-spacing: .05em; }
 .modal h4 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); font-weight: normal; }
@@ -117,6 +137,6 @@ button:disabled { opacity: .5; cursor: default; }
 .imbalance .bid-share { position: absolute; left: 0; top: 0; bottom: 0; background: #26a69a55; }
 .imbalance label { position: relative; display: block; text-align: center; font-size: 10px; line-height: 16px; }
 @media (max-width: 900px) {
-  main { grid-template-columns: 1fr; grid-template-rows: 380px auto; grid-template-areas: "chart" "book" "tape" "markets" "alerts" "rules"; }
+  main { grid-template-columns: 1fr; grid-template-rows: 380px auto; grid-template-areas: "chart" "book" "tape" "markets" "alerts" "arb"; }
   .tape { max-height: 300px; }
 }

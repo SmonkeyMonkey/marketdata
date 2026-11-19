@@ -133,6 +133,30 @@ func (c *ClickHouse) InsertBookSamples(ctx context.Context, samples []model.Book
 	return nil
 }
 
+func (c *ClickHouse) InsertArbWindows(ctx context.Context, windows []model.ArbWindow) error {
+	if len(windows) == 0 {
+		return nil
+	}
+	b, err := c.conn.PrepareBatch(ctx, `INSERT INTO arb_windows
+		(id, asset, buy_exchange, buy_symbol, sell_exchange, sell_symbol, opened, closed, duration_ms,
+		 peak_net_bps, peak_gross_bps, peak_size, peak_profit, updates)`)
+	if err != nil {
+		return fmt.Errorf("prepare arb_windows batch: %w", err)
+	}
+	defer b.Abort()
+	for _, w := range windows {
+		if err := b.Append(w.ID, w.Asset, w.BuyExchange, w.BuySymbol, w.SellExchange, w.SellSymbol, w.Opened, w.Closed,
+			uint64(max(w.Duration().Milliseconds(), 0)), w.PeakNetBps.InexactFloat64(), w.PeakGrossBps.InexactFloat64(),
+			w.PeakSize, w.PeakProfit, uint64(w.Updates)); err != nil {
+			return fmt.Errorf("append arb window: %w", err)
+		}
+	}
+	if err := b.Send(); err != nil {
+		return fmt.Errorf("send arb_windows batch: %w", err)
+	}
+	return nil
+}
+
 func (c *ClickHouse) InsertGaps(ctx context.Context, gaps []model.Gap) error {
 	if len(gaps) == 0 {
 		return nil

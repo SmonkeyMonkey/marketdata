@@ -81,7 +81,12 @@ func run() error {
 		return fmt.Errorf("load rules: %w", err)
 	}
 	loaded.Store(true)
-	go svc.FollowRules(ctx)
+	go func() {
+		if err := svc.FollowRules(ctx); err != nil {
+			log.Error("rules follower stopped", "err", err)
+			stop()
+		}
+	}()
 
 	api := &http.Server{Addr: cfg.Addr, Handler: alerts.NewAPI(svc).Handler(), ReadHeaderTimeout: 5 * time.Second}
 	go func() {

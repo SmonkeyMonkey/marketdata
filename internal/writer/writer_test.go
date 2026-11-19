@@ -54,6 +54,9 @@ func (s *fakeStore) InsertGaps(_ context.Context, g []model.Gap) error {
 
 func (s *fakeStore) InsertCandles(context.Context, []model.Candle) error { return nil }
 func (s *fakeStore) InsertAlerts(context.Context, []model.Alert) error   { return nil }
+func (s *fakeStore) InsertArbWindows(context.Context, []model.ArbWindow) error {
+	return nil
+}
 func (s *fakeStore) InsertBookSamples(context.Context, []model.BookSample) error {
 	return nil
 }

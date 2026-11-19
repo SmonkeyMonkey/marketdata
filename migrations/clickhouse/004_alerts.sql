@@ -3,7 +3,7 @@
 CREATE TABLE IF NOT EXISTS marketdata.alerts
 (
     id          String,
-    type        LowCardinality(String), -- price_rule, whale_trade, price_move
+    type        LowCardinality(String), -- price_rule, whale_trade, price_move, arbitrage
     exchange    LowCardinality(String),
     symbol      LowCardinality(String),
     message     String,

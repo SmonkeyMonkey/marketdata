@@ -25,6 +25,10 @@ func RuleChannel(id string) string                 { return "alerts:rule:" + id 
 // BookChannel carries order book snapshots (top 50 levels, ~10 per second).
 func BookChannel(exchange, symbol string) string { return "book:" + exchange + ":" + symbol }
 
+// ArbChannel carries cross-exchange comparisons of one asset (BTC-USD covers
+// BTC-USD, BTC-USDT and BTC-USDC markets), ~4 per second.
+func ArbChannel(asset string) string { return "arb:" + asset }
+
 func CandlesChannel(c model.Candle) string {
 	return "candles:" + c.Exchange + ":" + c.Symbol + ":" + model.PeriodName(c.Interval)
 }
@@ -38,10 +42,12 @@ func ValidChannel(ch string) error {
 		return fmt.Errorf("channel too long")
 	case (parts[0] == "trades" || parts[0] == "alerts" || parts[0] == "book") && len(parts) == 3 && parts[1] != "" && parts[2] != "":
 		return nil
+	case parts[0] == "arb" && len(parts) == 2 && parts[1] != "":
+		return nil
 	case parts[0] == "candles" && len(parts) == 4 && parts[1] != "" && parts[2] != "" && parts[3] != "":
 		return nil
 	default:
-		return fmt.Errorf("invalid channel %q: want trades:<exchange>:<symbol>, candles:<exchange>:<symbol>:<period>, alerts:<exchange>:<symbol> or alerts:rule:<id>", ch)
+		return fmt.Errorf("invalid channel %q: want trades:<exchange>:<symbol>, candles:<exchange>:<symbol>:<period>, alerts:<exchange>:<symbol>, alerts:rule:<id> or arb:<asset>", ch)
 	}
 }
 
@@ -156,6 +162,52 @@ func encodeBook(b model.Book, now time.Time) ([]byte, error) {
 		m.Mid, m.Spread, m.SpreadBps, m.Imbalance = s.Mid, s.Spread, s.SpreadBps, s.Imbalance
 	}
 	return json.Marshal(envelope{Type: "book", Channel: BookChannel(b.Exchange, b.Symbol), TS: now.UnixMilli(), Data: m})
+}
+
+type arbVenueMsg struct {
+	Exchange string `json:"exchange"`
+	Symbol   string `json:"symbol"`
+	// Prices in the asset's common quote; Rate converted them from the
+	// market's own quote (RateSource: "1", a market, or "peg").
+	Bid        decimal.Decimal `json:"bid"`
+	Ask        decimal.Decimal `json:"ask"`
+	BidSize    decimal.Decimal `json:"bid_size"`
+	AskSize    decimal.Decimal `json:"ask_size"`
+	Rate       decimal.Decimal `json:"rate"`
+	RateSource string          `json:"rate_source"`
+	FeeBps     decimal.Decimal `json:"fee_bps"`
+	Time       time.Time       `json:"time"`
+}
+
+type arbRouteMsg struct {
+	Buy       string          `json:"buy"`  // exchange:symbol
+	Sell      string          `json:"sell"` // exchange:symbol
+	BuyPrice  decimal.Decimal `json:"buy_price"`
+	SellPrice decimal.Decimal `json:"sell_price"`
+	GrossBps  decimal.Decimal `json:"gross_bps"`
+	NetBps    decimal.Decimal `json:"net_bps"`
+	Size      decimal.Decimal `json:"size"`
+	Profit    decimal.Decimal `json:"profit"`
+}
+
+type arbMsg struct {
+	Asset  string        `json:"asset"`
+	Time   time.Time     `json:"time"`
+	Venues []arbVenueMsg `json:"venues"`
+	Routes []arbRouteMsg `json:"routes"` // best net first
+}
+
+func encodeArb(s model.ArbSnapshot, now time.Time) ([]byte, error) {
+	m := arbMsg{Asset: s.Asset, Time: s.Time, Venues: make([]arbVenueMsg, len(s.Venues)), Routes: make([]arbRouteMsg, len(s.Routes))}
+	for i, v := range s.Venues {
+		m.Venues[i] = arbVenueMsg{Exchange: v.Exchange, Symbol: v.Symbol, Bid: v.Bid, Ask: v.Ask, BidSize: v.BidSize, AskSize: v.AskSize,
+			Rate: v.Rate, RateSource: v.RateSource, FeeBps: v.FeeBps, Time: v.BookTime}
+	}
+	for i, r := range s.Routes {
+		m.Routes[i] = arbRouteMsg{Buy: r.BuyExchange + ":" + r.BuySymbol, Sell: r.SellExchange + ":" + r.SellSymbol,
+			BuyPrice: r.BuyPrice, SellPrice: r.SellPrice, GrossBps: r.GrossBps, NetBps: r.NetBps, Size: r.Size, Profit: r.Profit}
+	}
+	return json.Marshal(envelope{Type: "arb", Channel: ArbChannel(s.Asset), TS: now.UnixMilli(), Data: m})
 }
 
 func control(typ, errMsg string, channels []string) []byte {
