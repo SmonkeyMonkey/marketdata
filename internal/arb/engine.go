@@ -41,6 +41,10 @@ type Config struct {
 	// MaxBookAge: a book not updated for this long (receive time) is left
 	// out, so a dead feed cannot produce phantom opportunities.
 	MaxBookAge time.Duration
+	// FXMaxAge is MaxBookAge for the rate markets of FX: a stablecoin rate
+	// changes slowly and its book may stay unchanged (so unpublished) for
+	// minutes. 0 means MaxBookAge.
+	FXMaxAge time.Duration
 	// PublishEvery limits snapshots per asset; windows are still evaluated
 	// on every book.
 	PublishEvery time.Duration
@@ -337,8 +341,12 @@ func (e *Engine) rate(quote string, now time.Time) (decimal.Decimal, string) {
 	if !ok {
 		return one, "peg"
 	}
+	maxAge := e.cfg.FXMaxAge
+	if maxAge == 0 {
+		maxAge = e.cfg.MaxBookAge
+	}
 	b, ok := e.books[market]
-	if !ok || !e.fresh(b, now) || len(b.Bids) == 0 || len(b.Asks) == 0 {
+	if !ok || b.ReceiveTime.IsZero() || now.Sub(b.ReceiveTime) > maxAge || len(b.Bids) == 0 || len(b.Asks) == 0 {
 		return one, "peg"
 	}
 	return b.Bids[0].Price.Add(b.Asks[0].Price).Div(decimal.NewFromInt(2)), market

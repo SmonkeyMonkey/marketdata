@@ -129,6 +129,18 @@ func TestQuoteConversion(t *testing.T) {
 	if v.RateSource != "kraken:USDT-USD" || !v.Rate.Equal(d("0.999")) || !v.Bid.Equal(d("99.9")) {
 		t.Errorf("converted venue = %+v", v)
 	}
+
+	// A rate book unchanged for a minute is still used (FXMaxAge), a trading
+	// book that old is not.
+	e.cfg.FXMaxAge = 5 * time.Minute
+	later := t0.Add(time.Minute)
+	out = e.Update(book("binance", "BTC-USDT", later, levels("100:1"), levels("100.1:1")), later)
+	if v := lastSnapshot(t, out).Venues[0]; v.RateSource != "kraken:USDT-USD" {
+		t.Errorf("rate dropped after a quiet minute: %+v", v)
+	}
+	if n := len(lastSnapshot(t, out).Venues); n != 1 {
+		t.Errorf("venues = %d, want only binance (coinbase is a minute old)", n)
+	}
 }
 
 func TestWindowLifecycleAndAlert(t *testing.T) {

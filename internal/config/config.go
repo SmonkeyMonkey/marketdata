@@ -221,12 +221,16 @@ var exchangeDefaults = map[string]Exchange{
 	"coinbase": {URL: "wss://ws-feed.exchange.coinbase.com", Symbols: []string{"BTC-USD", "ETH-USD"}, ReadTimeout: 15 * time.Second},
 	"binance":  {URL: "wss://stream.binance.com:9443/stream", Symbols: []string{"BTC-USDT", "ETH-USDT"}, ReadTimeout: 30 * time.Second},
 	"kraken":   {URL: "wss://ws.kraken.com/v2", Symbols: []string{"BTC-USD", "ETH-USD"}, ReadTimeout: 15 * time.Second},
+	// Bybit and OKX answer our 20 s pings, so a quiet feed still gets a
+	// frame within the timeout.
+	"bybit": {URL: "wss://stream.bybit.com/v5/public/spot", Symbols: []string{"BTC-USDT", "ETH-USDT"}, ReadTimeout: 30 * time.Second},
+	"okx":   {URL: "wss://ws.okx.com:443/ws/v5/public", Symbols: []string{"BTC-USDT", "ETH-USDT"}, ReadTimeout: 30 * time.Second},
 }
 
 // exchanges reads EXCHANGES and, for each name, <NAME>_WS_URL,
 // <NAME>_SYMBOLS and <NAME>_READ_TIMEOUT.
 func (e *env) exchanges() []Exchange {
-	names := e.list("EXCHANGES", []string{"coinbase", "binance", "kraken"})
+	names := e.list("EXCHANGES", []string{"coinbase", "binance", "kraken", "bybit", "okx"})
 	if len(names) == 0 {
 		e.fail("EXCHANGES must not be empty")
 	}
@@ -484,6 +488,7 @@ type Arbitrage struct {
 	AlertBps      decimal.Decimal
 	AlertCooldown time.Duration
 	MaxBookAge    time.Duration
+	FXMaxAge      time.Duration
 	PublishEvery  time.Duration
 	Tick          time.Duration
 }
@@ -497,13 +502,16 @@ func LoadArbitrage() (Arbitrage, error) {
 		Quotes:      e.list("ARB_QUOTES", []string{"USDT:USD", "USDC:USD"}),
 		FX:          e.list("ARB_FX", []string{"USDT:kraken:USDT-USD", "USDC:kraken:USDC-USD"}),
 		// Lowest-tier taker fees; check the current fee schedules.
-		TakerFees:     e.list("ARB_TAKER_FEES_BPS", []string{"coinbase:60", "binance:10", "kraken:40"}),
+		TakerFees:     e.list("ARB_TAKER_FEES_BPS", []string{"coinbase:60", "binance:10", "kraken:40", "bybit:10", "okx:10"}),
 		MinNetBps:     e.decimal("ARB_MIN_NET_BPS", "0"),
 		AlertBps:      e.decimal("ARB_ALERT_BPS", "10"),
 		AlertCooldown: e.duration("ARB_ALERT_COOLDOWN", time.Minute),
 		MaxBookAge:    e.duration("ARB_MAX_BOOK_AGE", 5*time.Second),
-		PublishEvery:  e.duration("ARB_PUBLISH_EVERY", 250*time.Millisecond),
-		Tick:          e.duration("ARB_TICK", 500*time.Millisecond),
+		// Rate books (USDT-USD) can stay unchanged for minutes, and books are
+		// only published on change.
+		FXMaxAge:     e.duration("ARB_FX_MAX_AGE", 5*time.Minute),
+		PublishEvery: e.duration("ARB_PUBLISH_EVERY", 250*time.Millisecond),
+		Tick:         e.duration("ARB_TICK", 500*time.Millisecond),
 	}
 	return c, e.err()
 }

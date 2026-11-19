@@ -35,6 +35,33 @@ func (t *TradeIDs) Observe(symbol string, id int64, now time.Time, dst []model.E
 	return dst, false
 }
 
+// Repeat reports whether id is not newer than the last one seen for symbol,
+// and records it otherwise. For exchanges whose IDs grow per symbol but skip
+// values (Bybit), it drops repeats without reporting gaps.
+func (t *TradeIDs) Repeat(symbol string, id int64) bool {
+	if last, seen := t.last[symbol]; seen && id <= last {
+		return true
+	}
+	t.last[symbol] = id
+	return false
+}
+
+// ObserveRange is Observe for a trade that aggregates the IDs first..last
+// (OKX reports one trade per price level of a match, carrying the last ID
+// and the count). dup is true when the whole range was already seen.
+func (t *TradeIDs) ObserveRange(symbol string, first, last int64, now time.Time, dst []model.Event) (_ []model.Event, dup bool) {
+	prev, seen := t.last[symbol]
+	switch {
+	case !seen:
+	case last <= prev:
+		return dst, true
+	case first > prev+1:
+		dst = append(dst, t.gap(symbol, prev, first, now))
+	}
+	t.last[symbol] = last
+	return dst, false
+}
+
 // AdvanceTo handles out-of-band knowledge of the latest trade ID (e.g. a
 // heartbeat): trades between the last seen ID and id are reported missing.
 // Unknown symbols are ignored, there is no baseline to compare against.

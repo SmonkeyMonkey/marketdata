@@ -29,6 +29,8 @@ func TestLatestOnlyMovesForward(t *testing.T) {
 		{binance(10, 0), true},
 		{binance(9, time.Second), false}, // older update id wins over a later time
 		{binance(11, -time.Second), true},
+		{binance(3, 10*time.Second), true}, // sequence restarted by the exchange
+		{binance(2, 11*time.Second), false},
 	} {
 		if got := l.Accept(c.b); got != c.want {
 			t.Errorf("case %d: Accept = %v, want %v", i, got, c.want)

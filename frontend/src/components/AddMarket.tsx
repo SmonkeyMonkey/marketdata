@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api'
 import type { Instrument, Market } from '../types'
 
-const EXCHANGES = ['binance', 'coinbase', 'kraken'] as const
+const EXCHANGES = ['binance', 'coinbase', 'kraken', 'bybit', 'okx'] as const
 
 /** Searches an exchange's instruments and subscribes the ingesters to one. */
 export function AddMarket({ onAdded, onClose }: { onAdded: (m: Market) => void; onClose: () => void }) {

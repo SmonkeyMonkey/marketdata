@@ -77,6 +77,13 @@ func Diff(prev, next []string) (added, removed []string) {
 	return added, removed
 }
 
+// Pinger is implemented by feeds whose exchange closes connections that stay
+// quiet (Bybit, OKX): the runner sends the frame at the given interval for
+// as long as the connection is open.
+type Pinger interface {
+	Ping() (frame []byte, every time.Duration)
+}
+
 // Outbox is implemented by feeds that sometimes need to send frames on their
 // own, e.g. to resubscribe a book after a checksum mismatch. The runner
 // sends whatever Outbox returns after each handled frame.

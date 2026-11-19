@@ -119,22 +119,14 @@ func checksumNumber(d decimal.Decimal, places int32) string {
 // requestResync resubscribes the book now, or once resyncEvery has passed
 // since the last resubscription of that pair.
 func (f *Feed) requestResync(native string, now time.Time) {
-	if now.Sub(f.lastResync[native]) < resyncEvery {
-		f.pendingResync[native] = true
-		return
+	if f.resyncs.Request(native, now) {
+		f.resubscribe(native)
 	}
-	f.lastResync[native] = now
-	delete(f.pendingResync, native)
-	f.resubscribe(native)
 }
 
 func (f *Feed) retryResyncs(now time.Time) {
-	for native := range f.pendingResync {
-		if slices.Contains(f.symbols, native) {
-			f.requestResync(native, now)
-		} else {
-			delete(f.pendingResync, native)
-		}
+	for _, native := range f.resyncs.Due(now) {
+		f.resubscribe(native)
 	}
 }
 
