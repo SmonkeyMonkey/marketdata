@@ -19,11 +19,19 @@ import (
 )
 
 // NewRegistry returns a registry with Go runtime and process metrics.
+// Version is set at build time (-ldflags -X), e.g. to the git commit.
+var Version = "dev"
+
 func NewRegistry() *prometheus.Registry {
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+		// Which build is running, as md_build_info{version="..."} 1.
+		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+			Namespace: "md", Name: "build_info", Help: "Build of the running binary.",
+			ConstLabels: prometheus.Labels{"version": Version},
+		}, func() float64 { return 1 }),
 	)
 	return reg
 }

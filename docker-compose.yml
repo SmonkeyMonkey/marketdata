@@ -13,8 +13,9 @@ x-ingester: &ingester
   image: marketdata-ingester:dev
   build:
     context: .
+    target: ingester
     args:
-      SERVICE: ingester
+      VERSION: ${VERSION:-dev}
   depends_on:
     kafka-init:
       condition: service_completed_successfully
@@ -47,8 +48,9 @@ services:
     image: marketdata-writer:dev
     build:
       context: .
+      target: writer
       args:
-        SERVICE: writer
+        VERSION: ${VERSION:-dev}
     environment:
       KAFKA_BROKERS: kafka:29092
       CLICKHOUSE_ADDR: clickhouse:9000
@@ -63,8 +65,9 @@ services:
     image: marketdata-aggregator:dev
     build:
       context: .
+      target: aggregator
       args:
-        SERVICE: aggregator
+        VERSION: ${VERSION:-dev}
     environment:
       KAFKA_BROKERS: kafka:29092
     depends_on:
@@ -76,8 +79,9 @@ services:
     image: marketdata-alerts:dev
     build:
       context: .
+      target: alerts
       args:
-        SERVICE: alerts
+        VERSION: ${VERSION:-dev}
     ports:
       - "8091:8091" # rules API
     environment:
@@ -94,8 +98,9 @@ services:
     image: marketdata-arbitrage:dev
     build:
       context: .
+      target: arbitrage
       args:
-        SERVICE: arbitrage
+        VERSION: ${VERSION:-dev}
     environment:
       KAFKA_BROKERS: kafka:29092
     depends_on:
@@ -108,8 +113,9 @@ services:
     image: marketdata-api:dev
     build:
       context: .
+      target: api
       args:
-        SERVICE: api
+        VERSION: ${VERSION:-dev}
     ports:
       - "8088:8088"
     environment:
@@ -128,8 +134,9 @@ services:
     image: marketdata-gateway:dev
     build:
       context: .
+      target: gateway
       args:
-        SERVICE: gateway
+        VERSION: ${VERSION:-dev}
     ports:
       - "8090:8090"
       - "9104:9104" # metrics + pprof
@@ -141,6 +148,47 @@ services:
       kafka-init:
         condition: service_completed_successfully
 
+  # Pipeline benchmark (make bench-pipeline): a writer and an aggregator on
+  # their own topics (bench.*), consumer groups and ClickHouse database, fed
+  # by replay with stored trades. Not started by default.
+  bench-writer:
+    <<: *app
+    image: marketdata-writer:dev
+    profiles: ["bench"]
+    restart: "no"
+    environment: &bench-env
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_TOPIC_TRADES: bench.trades
+      KAFKA_TOPIC_GAPS: bench.gaps
+      KAFKA_TOPIC_CANDLES: bench.candles
+      KAFKA_TOPIC_ALERTS: bench.alerts
+      KAFKA_TOPIC_BOOKS: bench.books
+      KAFKA_TOPIC_ARB_WINDOWS: bench.arb-windows
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DB: bench
+      WRITER_CONSUMER_GROUP: bench-writer
+      WRITER_BATCH_SIZE: ${BENCH_WRITER_BATCH:-10000}
+      AGG_CONSUMER_GROUP: bench-aggregator
+
+  bench-aggregator:
+    <<: *app
+    image: marketdata-aggregator:dev
+    profiles: ["bench"]
+    restart: "no"
+    environment: *bench-env
+
+  replay:
+    image: marketdata-replay:dev
+    build:
+      context: .
+      target: replay
+      args:
+        VERSION: ${VERSION:-dev}
+    profiles: ["bench"]
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      CLICKHOUSE_ADDR: clickhouse:9000
+
   # Load generator, not started by default: make load LOAD_CONNS=20000 LOAD_REPLICAS=2
   # One container reaches ~28k connections to a single gateway port (ephemeral
   # ports per source IP); scale replicas for more.
@@ -148,8 +196,9 @@ services:
     image: marketdata-loadgen:dev
     build:
       context: .
+      target: loadgen
       args:
-        SERVICE: loadgen
+        VERSION: ${VERSION:-dev}
     profiles: ["load"]
     command: ["-url", "ws://gateway:8090/ws", "-conns", "${LOAD_CONNS:-10000}", "-rate", "${LOAD_RATE:-1000}",
               "-trades", "${LOAD_TRADES_SHARE:-0.1}", "-duration", "${LOAD_DURATION:-2m}"]

@@ -92,6 +92,7 @@ func (s *Service) Run(ctx context.Context) error {
 
 		s.mu.Lock()
 		now := time.Now()
+		s.opts.Metrics.Trades(fetches.NumRecords())
 		fetches.EachRecord(func(r *kgo.Record) {
 			t, err := codec.DecodeTrade(r.Value)
 			if err != nil {

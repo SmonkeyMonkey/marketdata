@@ -207,8 +207,16 @@ internal/config         env configuration
   are static config, not each account's tier, and transfers between exchanges (withdrawal fees,
   confirmation time) are not modelled — the edge is what simultaneous trades on pre-funded
   accounts would get.
-- The Docker Desktop VM has 4 GB: `make up` builds images one at a time, because parallel Go
-  builds next to Kafka and ClickHouse got the brokers OOM-killed.
+- The Docker Desktop VM has 4 GB. ClickHouse sizes its memory budget to 90% of the VM, unaware
+  of Kafka's JVM next to it, so a heavy query or a full-history replay can get a broker killed
+  by the VM's OOM killer (the pipeline recovers: consumers reconnect, nothing is lost or
+  duplicated). Give Docker 8 GB for `make bench-pipeline BENCH_TRADES=0`.
+- Images: one Dockerfile, one Go build stage for all services (`go build ./cmd/...` once) and a
+  thin distroless stage per service (`target:` in compose), 8–19 MB each. Build stages
+  cross-compile from the build machine's platform. Only Go sources reach the Go stage and only
+  the api image embeds the frontend, so SQL, dashboard or UI changes don't rebuild the other
+  images. Building all images after a Go change: 4 s in parallel (before: seven separate
+  compiles, which in parallel got Kafka OOM-killed).
 
 ## TODO
 

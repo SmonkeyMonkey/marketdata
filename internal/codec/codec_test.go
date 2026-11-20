@@ -129,3 +129,29 @@ func TestArbRoundTrip(t *testing.T) {
 		t.Error("bad decimal accepted")
 	}
 }
+
+var benchTrade = model.Trade{
+	Exchange: "binance", Symbol: "BTC-USDT", TradeID: "6873309017",
+	Price: decimal.RequireFromString("64626.55"), Size: decimal.RequireFromString("0.00008"),
+	TakerSide: model.SideBuy, ExchangeTime: time.Unix(1_794_928_607, 766_000_000).UTC(), ReceiveTime: time.Unix(1_794_928_607, 812_000_000).UTC(),
+}
+
+func BenchmarkEncodeTrade(b *testing.B) {
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := EncodeTrade(benchTrade); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkDecodeTrade(b *testing.B) {
+	raw, _ := EncodeTrade(benchTrade)
+	b.SetBytes(int64(len(raw)))
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := DecodeTrade(raw); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

@@ -18,7 +18,7 @@ const testURL = "wss://feed.test"
 
 var now = time.Date(2026, 11, 17, 14, 3, 47, 0, time.UTC)
 
-func frame(t *testing.T, name string) []byte {
+func frame(t testing.TB, name string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
