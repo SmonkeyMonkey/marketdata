@@ -9,21 +9,42 @@ INGESTERS := ingester-a ingester-b
 export VERSION ?= $(shell git describe --always --dirty 2>/dev/null || echo dev)
 CH := docker compose exec -T clickhouse clickhouse-client -u $${CLICKHOUSE_USER:-marketdata} --password $${CLICKHOUSE_PASSWORD:-marketdata} -d marketdata
 
-.PHONY: bench bench-pipeline build test lint proto dashboard run-ingester run-writer up down logs deploy-ingesters audit verify-candles load frontend frontend-dev frontend-check
+.PHONY: bench bench-pipeline build test test-integration vuln lint proto dashboard run-ingester run-writer up down logs deploy-ingesters audit verify-candles load frontend frontend-dev frontend-check
 
 build:
 	go build -o bin/ ./cmd/...
 
-test:
-	go test -race -count=1 ./...
+# Unit tests (no external services). gotestsum prints a readable summary,
+# writes a JUnit report and reruns a failed test once: a test that passes on
+# the second try is still reported as flaky, not hidden.
+test: bin/gotestsum
+	./bin/gotestsum --format $(or $(GOTESTSUM_FORMAT),pkgname) --junitfile $(or $(JUNIT),/dev/null) \
+		--rerun-fails=1 --packages=./... -- -race -count=1
+
+# Store SQL against a real ClickHouse (make up, or the CI service container).
+# Uses a throwaway database; the live one is never touched.
+test-integration: bin/gotestsum
+	./bin/gotestsum --format $(or $(GOTESTSUM_FORMAT),testname) --junitfile $(or $(JUNIT),/dev/null) \
+		--packages=./internal/store/... -- -race -count=1 -tags integration -run Integration
+
+# Known vulnerabilities in the code paths we actually call (stdlib and deps).
+vuln: bin/govulncheck
+	./bin/govulncheck ./...
 
 lint: bin/buf
 	gofmt -l . | (! grep .)
 	go vet ./...
+	go vet -tags integration ./internal/store/...
 	./bin/buf lint
 
 bin/buf: tools/go.mod
 	cd tools && go build -o ../bin/buf github.com/bufbuild/buf/cmd/buf
+
+bin/gotestsum: tools/go.mod
+	cd tools && go build -o ../bin/gotestsum gotest.tools/gotestsum
+
+bin/govulncheck: tools/go.mod
+	cd tools && go build -o ../bin/govulncheck golang.org/x/vuln/cmd/govulncheck
 
 proto: bin/buf
 	./bin/buf lint

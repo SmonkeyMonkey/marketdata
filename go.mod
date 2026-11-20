@@ -2,6 +2,8 @@ module marketdata
 
 go 1.26.5
 
+toolchain go1.26.11
+
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.51.0
 	github.com/coder/websocket v1.8.15

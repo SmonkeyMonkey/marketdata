@@ -1,0 +1,28 @@
+name: bench
+
+# Micro-benchmarks don't gate pull requests (shared runners are too noisy to
+# compare); they run nightly and on demand, results in the run summary.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: |
+          make bench | tee bench.txt
+          {
+            echo '## Micro-benchmarks'
+            echo '```'
+            cat bench.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
