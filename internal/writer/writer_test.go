@@ -113,7 +113,13 @@ func start(t *testing.T, cfg config.Kafka, store Store) (stop func() error) {
 	w, err := New(store, Options{
 		Kafka: cfg, Group: group, BatchSize: 100, FlushInterval: 50 * time.Millisecond,
 		Retry: backoff.Constant(10 * time.Millisecond),
-	}, discard())
+	}, discard(),
+		// kfake occasionally leaves a fetch unanswered until its max wait (5s
+		// by default, as long as eventually waits) although data is there:
+		// seen on a restarted consumer resuming at a committed offset, with the
+		// end offset already past it. A short max wait makes the client simply
+		// ask again.
+		kgo.FetchMaxWait(200*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
 	}
