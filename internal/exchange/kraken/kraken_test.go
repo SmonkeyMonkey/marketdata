@@ -17,7 +17,7 @@ const testURL = "wss://ws.kraken.com/v2"
 
 var now = time.Date(2026, 11, 17, 15, 16, 48, 0, time.UTC)
 
-func frame(t *testing.T, name string) []byte {
+func frame(t testing.TB, name string) []byte {
 	t.Helper()
 	b, err := os.ReadFile(filepath.Join("testdata", name))
 	if err != nil {
@@ -26,7 +26,7 @@ func frame(t *testing.T, name string) []byte {
 	return b
 }
 
-func newFeed(t *testing.T) *Feed {
+func newFeed(t testing.TB) *Feed {
 	t.Helper()
 	f, err := New(testURL, []string{"BTC-USD", "ETH-USD"})
 	if err != nil {
@@ -180,7 +180,7 @@ func TestSetSymbols(t *testing.T) {
 // BTC/USD precision as sent by the instrument channel.
 var instrument = []byte(`{"channel":"instrument","type":"snapshot","data":{"assets":[],"pairs":[{"symbol":"BTC/USD","price_precision":1,"qty_precision":8}]}}`)
 
-func bookFrames(t *testing.T) (snapshot []byte, updates [][]byte) {
+func bookFrames(t testing.TB) (snapshot []byte, updates [][]byte) {
 	t.Helper()
 	for _, l := range strings.Split(strings.TrimSpace(string(frame(t, "book_updates.json"))), "\n") {
 		updates = append(updates, []byte(l))

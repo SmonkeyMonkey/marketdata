@@ -203,6 +203,7 @@ func (m *Writer) DecodeError(topic string) { m.decodeErrors.WithLabelValues(topi
 
 type Aggregator struct {
 	reg          prometheus.Registerer
+	trades       prometheus.Counter
 	emitted      *prometheus.CounterVec
 	produceErrs  prometheus.Counter
 	decodeErrors prometheus.Counter
@@ -213,6 +214,10 @@ func NewAggregator(reg prometheus.Registerer) *Aggregator {
 	f := promauto.With(reg)
 	return &Aggregator{
 		reg: reg,
+		trades: f.NewCounter(prometheus.CounterOpts{
+			Namespace: namespace, Subsystem: "agg", Name: "trades_total",
+			Help: "Trade records aggregated (duplicates included).",
+		}),
 		emitted: f.NewCounterVec(prometheus.CounterOpts{
 			Namespace: namespace, Subsystem: "agg", Name: "candles_emitted_total",
 			Help: "Closed candles published, by interval.",
@@ -265,6 +270,7 @@ func (m *Aggregator) Emitted(c model.Candle) {
 
 func (m *Aggregator) ProduceError() { m.produceErrs.Inc() }
 func (m *Aggregator) DecodeError()  { m.decodeErrors.Inc() }
+func (m *Aggregator) Trades(n int)  { m.trades.Add(float64(n)) }
 
 func (m *Writer) Lag(topic string, partition int32, lag int64) {
 	m.lag.WithLabelValues(topic, strconv.Itoa(int(partition))).Set(float64(lag))

@@ -19,7 +19,7 @@ const url = "wss://stream.bybit.com/v5/public/spot"
 
 var t0 = time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
 
-func newFeed(t *testing.T, symbols ...string) *Feed {
+func newFeed(t testing.TB, symbols ...string) *Feed {
 	t.Helper()
 	f, err := New(url, symbols)
 	if err != nil {
@@ -30,7 +30,7 @@ func newFeed(t *testing.T, symbols ...string) *Feed {
 
 // session replays frames captured from the live endpoint (subscribe ack,
 // trades, a book snapshot and its deltas, a pong).
-func session(t *testing.T) [][]byte {
+func session(t testing.TB) [][]byte {
 	t.Helper()
 	fh, err := os.Open(filepath.Join("testdata", "session.jsonl"))
 	if err != nil {
